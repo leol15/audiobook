@@ -16,13 +16,25 @@ from ab.tts import load_backend
 
 def run(paths: BookPaths, cfg: BookConfig, force: bool = False):
     backend = load_backend(cfg.tts.backend, cfg.tts.params)
+    try:
+        return _run(paths, cfg, backend, force)
+    finally:
+        close = getattr(backend, "close", None)
+        if close:
+            close()
+
+
+def _run(paths: BookPaths, cfg: BookConfig, backend, force: bool):
     if cfg.language not in backend.languages:
         raise SystemExit(f"backend {backend.name} does not support language {cfg.language!r}")
     lines = read_lines(paths)
     paths.audio.mkdir(parents=True, exist_ok=True)
-    missing = [l for l in lines if force or not (l.audio and (paths.work / l.audio).exists())]
+    missing = [l for l in lines
+               if force or l.backend != backend.name
+               or not (l.audio and (paths.work / l.audio).exists())]
+    voices = cfg.voice_map(cfg.tts.backend)
     for ln in track(missing, description=f"render[{backend.name}]"):
-        voice = resolve_voice(cfg, ln.speaker)
+        voice = resolve_voice(voices, ln.speaker)
         params = {**cfg.tts.params, "seed": ln.attempts}
         key = cache.render_key(backend.name, voice, params, ln.text)
         out = paths.audio / f"{key}.wav"
@@ -32,15 +44,14 @@ def run(paths: BookPaths, cfg: BookConfig, force: bool = False):
             audio = crossfade_concat(pieces, backend.sample_rate) if pieces else np.zeros(0, np.float32)
             sf.write(out, audio, backend.sample_rate)
         ln.audio = str(out.relative_to(paths.work))
+        ln.backend = backend.name
+        ln.error_rate = None  # verify must look at the new audio
     write_lines(paths, lines)
     return paths.audio
 
 
-def resolve_voice(cfg: BookConfig, speaker: str) -> str:
-    if speaker in cfg.voices:
-        return cfg.voices[speaker]
-    if "_default" in cfg.voices:
-        return cfg.voices["_default"]
-    if "narrator" in cfg.voices:
-        return cfg.voices["narrator"]
+def resolve_voice(voices: dict[str, str], speaker: str) -> str:
+    for key in (speaker, "_default", "narrator"):
+        if key in voices:
+            return voices[key]
     raise SystemExit(f"no voice configured for {speaker!r}; set voices.narrator in book.yaml")

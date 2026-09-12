@@ -54,7 +54,9 @@ def run(paths: BookPaths, cfg: BookConfig, force: bool = False):
     meta = paths.work / "ffmetadata.txt"
     meta.write_text(_ffmetadata(cfg, markers), encoding="utf-8")
 
-    out = paths.out / f"{_slug(cfg.title)}.m4b"
+    backends = {ln.backend for ln in lines if ln.backend}
+    tag = f".{next(iter(backends))}" if len(backends) == 1 else ""
+    out = paths.out / f"{_slug(cfg.title)}{tag}.m4b"
     cmd = ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(concat_list), "-i", str(meta)]
     if cfg.cover:
         cmd += ["-i", str(paths.root / cfg.cover)]

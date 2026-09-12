@@ -197,7 +197,9 @@ Rules:
   with a short crossfade. Splits never cross a speaker change.
 - Cache key = `sha256(backend.name, voice, params, text)`. Switching backends
   or voices never clobbers earlier output, so you can A/B two renders of the
-  same book side by side.
+  same book side by side. Each line records which backend produced its audio,
+  and build names the M4B after it, so `ab render --tts chatterbox` followed
+  by `ab build` yields a second file next to the Kokoro one.
 - Deterministic seeds where the backend supports them; seed is part of
   `params`, so "regenerate with a different seed" is just a new cache key.
 - Voice names in `cast.yaml` are per-backend: a `voices:` map in `book.yaml`
@@ -219,6 +221,21 @@ off by default and enabled per book; it is not needed with Kokoro.
   script and punctuation vary.
 - Utterances above a threshold (start at 0.15) are re-rendered with a new
   seed, up to 3 attempts. Still-failing lines go to `verify.review.txt`.
+  Short lines tolerate one edit regardless of rate: a single misheard word on
+  a three-word line is whisper's error more often than the TTS model's.
+  Measured on the sample book:
+
+  | Backend | Mean word error | Lines re-rendered | Still bad after 3 tries |
+  |---|---|---|---|
+  | Kokoro-82M | 0.037 | 0 | 0 |
+  | Chatterbox Multilingual (default voice) | 0.200 | 6 | 3 |
+
+  Chatterbox's failures were hallucinations after short lines ("This was
+  invitation enough." became a sentence and a half of invented speech). That
+  is the autoregressive failure mode this stage exists for; Kokoro never
+  produced it. Likely mitigation for later: pad very short utterances with
+  surrounding narration or a minimum-length rule before sending to an
+  autoregressive backend.
 - Also flags audio-level problems: utterance duration far off the expected
   chars-per-second, or long internal silence.
 

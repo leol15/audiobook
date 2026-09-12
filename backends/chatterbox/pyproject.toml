@@ -1,0 +1,16 @@
+[project]
+name = "ab-chatterbox-worker"
+version = "0.1.0"
+description = "Chatterbox TTS worker for the ab subprocess backend (separate venv)"
+requires-python = ">=3.11,<3.12"
+dependencies = ["chatterbox-tts>=0.1.4", "numpy", "soundfile"]
+
+[tool.uv]
+# chatterbox-tts pins torch==2.6, which has no Blackwell (sm_120) kernels.
+# Override to the CUDA 12.8 builds; the pin is conservative, not a real API limit.
+override-dependencies = ["torch>=2.7", "torchaudio>=2.7", "numpy>=1.26"]
+index = [{ name = "pytorch-cu128", url = "https://download.pytorch.org/whl/cu128", explicit = true }]
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
+torchaudio = { index = "pytorch-cu128" }

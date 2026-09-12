@@ -5,9 +5,15 @@ tts:
   backend: kokoro
   params: { speed: 1.0 }
 voices:
-  narrator: bm_george
-  Mr. Bennet: bm_lewis
-  Mrs. Bennet: bf_emma
-  Elizabeth: af_heart
-  Jane: af_sarah
-  _default: am_michael
+  kokoro:
+    narrator: bm_george
+    Mr. Bennet: bm_lewis
+    Mrs. Bennet: bf_emma
+    Elizabeth: af_heart
+    Jane: af_sarah
+    _default: am_michael
+  chatterbox:
+    # "default" is the built-in voice; distinct characters need reference wavs,
+    # e.g. "voices/bennet.wav" (5-15 s of clean speech), relative to this dir.
+    narrator: default
+    _default: default

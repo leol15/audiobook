@@ -30,9 +30,16 @@ def _book(path: Path) -> BookPaths:
 
 
 def _make_cmd(name, fn):
-    def cmd(book: Path = typer.Argument(..., help="Book directory"), force: bool = False):
+    def cmd(
+        book: Path = typer.Argument(..., help="Book directory"),
+        force: bool = False,
+        tts: str | None = typer.Option(None, help="Override tts.backend from book.yaml"),
+    ):
         paths = _book(book)
-        out = fn(paths, paths.load_config(), force=force)
+        cfg = paths.load_config()
+        if tts:
+            cfg.tts.backend = tts
+        out = fn(paths, cfg, force=force)
         print(f"[green]{name}[/] -> {out}")
 
     cmd.__name__ = name
@@ -49,10 +56,14 @@ def run(
     to: str = typer.Option("build", help="Last stage to run"),
     force: str | None = typer.Option(None, help="Re-run from this stage onward"),
     skip: str = typer.Option("cast,verify", help="Comma-separated stages to skip"),
+    tts: str | None = typer.Option(None, help="Override tts.backend from book.yaml"),
 ):
     """Run stages in order up to --to, skipping fresh ones."""
     paths = _book(book)
     cfg = paths.load_config()
+    if tts:
+        cfg.tts.backend = tts
+        cfg.tts.params = {}
     skips = {s.strip() for s in skip.split(",") if s.strip()}
     forcing = False
     for name, fn in STAGES:

@@ -36,8 +36,19 @@ class BookConfig(BaseModel):
     cover: str | None = None
     chapter_regex: str | None = None
     tts: TTSConfig = Field(default_factory=TTSConfig)
-    # role -> backend voice id. Roles are "narrator", "_default", or a cast name.
-    voices: dict[str, str] = Field(default_factory=dict)
+    # role -> voice id, where roles are "narrator", "_default", or a cast name.
+    # Either one flat map, or one map per backend name:
+    #   voices: {narrator: bm_george}                     # applies to any backend
+    #   voices: {kokoro: {narrator: bm_george}, chatterbox: {narrator: default}}
+    voices: dict[str, str | dict[str, str]] = Field(default_factory=dict)
+
+    def voice_map(self, backend: str) -> dict[str, str]:
+        nested = {k: v for k, v in self.voices.items() if isinstance(v, dict)}
+        if nested:
+            if backend not in nested:
+                raise SystemExit(f"book.yaml voices has no map for backend {backend!r}")
+            return nested[backend]
+        return {k: v for k, v in self.voices.items() if isinstance(v, str)}
     pauses: Pauses = Field(default_factory=Pauses)
     verify: VerifyConfig = Field(default_factory=VerifyConfig)
     loudness_lufs: float = -18.0

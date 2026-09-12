@@ -34,6 +34,7 @@ class Line(BaseModel):
 
     # Filled by render/verify.
     audio: str | None = None
+    backend: str | None = None
     attempts: int = 0
     error_rate: float | None = None
 
@@ -42,5 +43,6 @@ class VerifyResult(BaseModel):
     id: str
     transcript: str
     error_rate: float
+    edits: int = 0
     duration: float
     ok: bool

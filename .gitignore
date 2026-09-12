@@ -6,3 +6,4 @@ books/*/out/
 .pytest_cache/
 .ruff_cache/
 .env
+backends/*/.venv/
