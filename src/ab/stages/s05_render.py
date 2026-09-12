@@ -16,6 +16,8 @@ from ab.stages.s04_attribute import read_lines, write_lines
 from ab.text import chunk_text
 from ab.tts import load_backend
 
+CHECKPOINT_EVERY = 10  # lines between lines.jsonl writes during a long render
+
 
 def run(paths: BookPaths, cfg: BookConfig, force: bool = False):
     backend = load_backend(cfg.tts.backend, cfg.tts.params)
@@ -37,7 +39,7 @@ def _run(paths: BookPaths, cfg: BookConfig, backend, force: bool):
                or not (l.audio and (paths.work / l.audio).exists())]
     voices = cfg.voice_map(cfg.tts.backend)
     synthesized = 0
-    for ln in track(missing, description=f"render[{backend.name}]"):
+    for done, ln in enumerate(track(missing, description=f"render[{backend.name}]"), 1):
         voice = resolve_voice(voices, ln.speaker)
         if (paths.root / voice).is_file():
             voice = str((paths.root / voice).resolve())  # reference clip, not a preset id
@@ -53,6 +55,8 @@ def _run(paths: BookPaths, cfg: BookConfig, backend, force: bool):
         ln.audio = str(out.relative_to(paths.work))
         ln.backend = backend.name
         ln.error_rate = None  # verify must look at the new audio
+        if done % CHECKPOINT_EVERY == 0:
+            write_lines(paths, lines)  # progress survives an interrupted run; `ab status` sees it
     write_lines(paths, lines)
     _link_by_line(paths, lines)
     note(paths, f"render[{backend.name}]: {synthesized} lines synthesized, "
