@@ -118,7 +118,10 @@ def main() -> None:
         dtype=torch.bfloat16, attn_implementation=args.attn)
     load_s = time.perf_counter() - t0
     if args.compile:
-        model.model.talker = torch.compile(model.model.talker, mode="reduce-overhead", dynamic=True)
+        # Wrapping the module does nothing: HF generate() calls the module's
+        # own forward. Compile the bound forward so decode steps hit it.
+        talker = model.model.talker
+        talker.forward = torch.compile(talker.forward, dynamic=True)
 
     if args.decode_chunk:
         chunked_decode(model, args.decode_chunk)

@@ -275,6 +275,32 @@ The 0.6B model is no faster than 1.7B at any batch size, which is the same
 finding from the other side: compute is not the bottleneck, so there is no
 reason to give up the larger model's quality.
 
+**Other levers, each measured separately** (same lines, `bench.py`):
+
+- *flash-attn.* No wheel on PyPI for torch 2.11/cu128/py3.12, but a
+  community build exists (`mjun0812/flash-attention-prebuild-wheels`,
+  `flash_attn-2.8.3+cu128torch2.11`) and it loads on sm_120. It makes no
+  difference: 0.35x at batch 1 and 2.65x at batch 20 against 0.43x / 2.71x
+  for `sdpa`. Attention over a few hundred tokens is a small fraction of a
+  launch-bound step. `sdpa` stays the default; `tts.params.attn:
+  flash_attention_2` selects it for anyone who wants to re-check on other
+  hardware.
+- *0.6B model.* 0.40x at batch 1, 1.83x at batch 16, i.e. the same as 1.7B.
+  Not used.
+- *torch.compile / CUDA graphs.* Wrapping the talker module is a no-op
+  because HF `generate()` calls the module's own `forward`; compiling the
+  bound `forward` (`bench.py --compile`) failed in inductor's C helper build
+  on this WSL install, and it could not have delivered the thing that would
+  matter (CUDA-graphed decode steps) anyway: the model declares
+  `_supports_static_cache = False`, so every step has a new KV length and the
+  graph would be re-captured. A real fix is a hand-written decode loop with a
+  static cache, or serving through vLLM, both out of scope for now.
+- *Batch size.* On 40 lines: batch 16 → 3.05x, 32 → 3.48x, 40 → 5.57x at
+  7.8 GB peak. It keeps scaling with the number of lines that share a call,
+  so the default is 32 (about 7 GB with the 1.7B model; lower `tts.batch` on
+  OOM, raise it on a bigger card). Whole-book batches fill better than the
+  benchmark's, because all of a speaker's lines form one group.
+
 ### 6. verify
 
 Autoregressive TTS skips sentences, repeats phrases, and invents words, and

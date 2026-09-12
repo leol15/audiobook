@@ -31,7 +31,8 @@ add a stage that round-trips book text through a model.
   Chatterbox, Qwen3-TTS Base/CustomVoice/VoiceDesign, ~4 GB each). A
   `[qwen3tts] loading ...` line is a load from cache, not a download.
 - ffmpeg is in WSL. `SoX could not be found` warnings from the Qwen venv are harmless.
-- flash-attn is not installed; Qwen3-TTS runs with `sdpa` attention.
+- flash-attn 2.8.3 (community cu128/torch2.11 wheel) is installed in the Qwen venv but
+  measured no faster than `sdpa`, which stays the default (`tts.params.attn`).
 
 ## Commands
 
