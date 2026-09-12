@@ -8,7 +8,13 @@ from rich import print
 
 from ab.config import BookPaths
 from ab.log import note
-from ab.stages import attribute, build, cast, ingest, normalize, render, verify
+from ab.stages import s01_ingest as ingest
+from ab.stages import s02_normalize as normalize
+from ab.stages import s03_cast as cast
+from ab.stages import s04_attribute as attribute
+from ab.stages import s05_render as render
+from ab.stages import s06_verify as verify
+from ab.stages import s07_build as build
 
 app = typer.Typer(no_args_is_help=True, help="Local audiobook narration pipeline.")
 
@@ -111,7 +117,7 @@ def voices_design(
     force: bool = typer.Option(False, help="Regenerate clips that already exist"),
 ):
     """Create one reference clip per role from cast descriptions (Qwen3-TTS VoiceDesign)."""
-    from ab.stages import voices
+    from ab import voices
 
     paths = _book(book)
     out = voices.run(paths, paths.load_config(), force=force, backend_name=backend)

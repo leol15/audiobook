@@ -12,7 +12,7 @@ from ab import cache
 from ab.audio import crossfade_concat
 from ab.config import BookConfig, BookPaths
 from ab.log import note
-from ab.stages.attribute import read_lines, write_lines
+from ab.stages.s04_attribute import read_lines, write_lines
 from ab.text import chunk_text
 from ab.tts import load_backend
 

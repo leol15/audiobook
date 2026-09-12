@@ -16,7 +16,7 @@ from rich import print
 from rich.progress import track
 
 from ab.config import BookConfig, BookPaths
-from ab.stages.attribute import read_lines
+from ab.stages.s04_attribute import read_lines
 from ab.tts import load_backend
 
 _NARRATOR = {

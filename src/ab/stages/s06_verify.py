@@ -17,8 +17,8 @@ from rich.progress import track
 from ab.config import BookConfig, BookPaths
 from ab.log import note
 from ab.models import VerifyResult
-from ab.stages import render
-from ab.stages.attribute import read_lines, write_lines
+from ab.stages import s05_render as render
+from ab.stages.s04_attribute import read_lines, write_lines
 
 _WHISPER_DEFAULT = {"en": "small.en", "zh": "small"}
 
@@ -103,7 +103,7 @@ def error_rate(reference: str, hypothesis: str, lang: str, with_edits: bool = Fa
 def _tokens(s: str, lang: str) -> list[str]:
     s = unicodedata.normalize("NFKC", s).lower()
     if lang == "zh":
-        from ab.stages.normalize import _zh_number
+        from ab.stages.s02_normalize import _zh_number
 
         # whisper writes ages and counts as digits; the source spells them out.
         # Do this before stripping punctuation so "15、6" stays two numbers.

@@ -7,7 +7,11 @@ import pytest
 import yaml
 
 from ab.config import BookPaths
-from ab.stages import attribute, build, ingest, normalize, render
+from ab.stages import s01_ingest as ingest
+from ab.stages import s02_normalize as normalize
+from ab.stages import s04_attribute as attribute
+from ab.stages import s05_render as render
+from ab.stages import s07_build as build
 
 SAMPLE = Path(__file__).parent.parent / "books" / "sample"
 

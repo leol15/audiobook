@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from ab.stages.ingest import parse
-from ab.stages.normalize import _zh_number, normalize
+from ab.stages.s01_ingest import parse
+from ab.stages.s02_normalize import _zh_number, normalize
 from ab.text import chunk_text, split_sentences
 
 SAMPLE = Path(__file__).parent.parent / "books" / "sample" / "source.txt"
@@ -57,7 +57,7 @@ def test_normalize_zh_numbers():
 
 
 def test_zh_ellipsis_and_fullwidth_period():
-    from ab.stages.ingest import parse
+    from ab.stages.s01_ingest import parse
     chs = parse("001 标题\n\n“这还算好的．．．要是失控了。”\n\n“．．．．．”\n", "zh", r"^\d{3}\s+\S.*$", is_markdown=False)
     assert chs[0].title == "001 标题"
     assert normalize(chs[0].paragraphs[0], "zh") == '"这还算好的，要是失控了。"'

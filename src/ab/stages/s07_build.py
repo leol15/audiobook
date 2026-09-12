@@ -12,7 +12,7 @@ from ab.audio import silence
 from ab.config import BookConfig, BookPaths
 from ab.log import note
 from ab.models import ChapterList
-from ab.stages.attribute import read_lines
+from ab.stages.s04_attribute import read_lines
 
 
 def run(paths: BookPaths, cfg: BookConfig, force: bool = False):

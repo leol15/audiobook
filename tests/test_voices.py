@@ -1,7 +1,7 @@
 import yaml
 
 from ab.config import BookPaths
-from ab.stages.voices import _slug, _write_voice_map
+from ab.voices import _slug, _write_voice_map
 
 
 def test_slug():

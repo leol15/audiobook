@@ -1,4 +1,4 @@
-from ab.stages.verify import error_rate
+from ab.stages.s06_verify import error_rate
 
 
 def test_wer_en():

@@ -24,7 +24,7 @@ def test_crossfade_concat_length():
 
 def test_voice_map_flat_and_nested():
     from ab.config import BookConfig
-    from ab.stages.render import resolve_voice
+    from ab.stages.s05_render import resolve_voice
 
     flat = BookConfig(title="t", voices={"narrator": "a", "Jane": "b"})
     assert flat.voice_map("kokoro") == {"narrator": "a", "Jane": "b"}

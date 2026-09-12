@@ -68,7 +68,9 @@ def _verify_failures(paths: BookPaths, lines: list[Line] | None = None) -> set[s
 
 def stage_status(paths: BookPaths, cfg: BookConfig) -> list[dict]:
     """One row per stage: name, state (fresh|stale|missing|n/a), detail, artifact."""
-    from ab.stages import attribute, ingest, normalize
+    from ab.stages import s01_ingest as ingest
+    from ab.stages import s02_normalize as normalize
+    from ab.stages import s04_attribute as attribute
 
     rows = []
 
@@ -156,7 +158,7 @@ def _age(p: Path) -> str:
 
 def write_report(paths: BookPaths, cfg: BookConfig) -> Path:
     """REPORT.md: everything you want to know after an unattended run."""
-    from ab.stages import attribute
+    from ab.stages import s04_attribute as attribute
 
     rows = stage_status(paths, cfg)
     out = [f"# {cfg.title}", "",
@@ -196,7 +198,7 @@ def write_report(paths: BookPaths, cfg: BookConfig) -> Path:
 def fix_line(paths: BookPaths, line_id: str, speaker: str | None = None, text: str | None = None,
              unlock: bool = False) -> Line:
     """Edit one line by id, lock it, and drop its audio so render redoes it."""
-    from ab.stages.attribute import read_lines, write_lines
+    from ab.stages.s04_attribute import read_lines, write_lines
 
     lines = read_lines(paths)
     target = next((ln for ln in lines if ln.id == line_id), None)
