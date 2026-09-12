@@ -269,6 +269,26 @@ off by default and enabled per book; it is not needed with Kokoro.
   from front matter.
 - Also emit per-chapter MP3 as an option for players that dislike M4B.
 
+## Debuggability
+
+A long unattended render must be inspectable afterwards without re-running
+anything, so the work directory is designed to be read by a person:
+
+- Artifacts are numbered by stage (`01-chapters.json` ... `07-chapters/`) so
+  a directory listing reads in pipeline order.
+- Every stage's `.inputs` stamp stores its named input hashes as JSON, and
+  `ab status` diffs them to say which input changed ("stale: cast changed")
+  rather than only that something did.
+- `04-script.md` is the book as a screenplay with markers for model-attributed,
+  unknown, verify-failed, and hand-locked lines. It is regenerated whenever
+  `lines.jsonl` is written, so it is never out of date.
+- `05-audio/by-line/<id>.wav` symlinks map line ids to content-hashed files.
+- `run.log` accumulates timestamped stage summaries and durations across
+  runs; `REPORT.md` is written at the end of every `ab run` with the stage
+  table, speaker counts, lines to review, and the log tail.
+- `ab fix <book> <id> --speaker X` edits and locks a line and clears its
+  audio, so the manual correction loop is one command plus a render.
+
 ## Project layout
 
 ```
@@ -277,6 +297,8 @@ audiobook/
   src/ab/
     cli.py                  typer: ab ingest|normalize|cast|attribute|render|verify|build|run
     stages/                 one module per stage, pure function: (paths, config) -> artifact
+    report.py               script.md, status table, REPORT.md, fix-line
+    log.py                  console + work/run.log
     tts/                    base.py (protocol), kokoro.py, chatterbox.py, subprocess.py
     llm.py                  thin Ollama client with JSON-schema enforcement and retries
     cache.py                hash-keyed artifact store
@@ -286,7 +308,7 @@ audiobook/
     book.yaml               language, backend, voice map, pauses, thresholds
     cast.yaml
     overrides.yaml
-    work/                   stage artifacts (gitignored)
+    work/                   numbered stage artifacts, run.log, REPORT.md (gitignored)
     out/                    final m4b
   tests/                    fixtures: 3-chapter public-domain excerpts, one English, one Chinese
 ```

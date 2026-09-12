@@ -79,3 +79,29 @@ point at those clips; rendering clones them with the Base model. Existing
 clips are kept unless `--force`. Edit a description in `cast.yaml` and rerun
 with `--force` to redesign one voice; delete a clip you dislike and rerun to
 regenerate just that one.
+
+## Inspecting a book (debugging workflow)
+
+```bash
+uv run ab status books/x            # each stage: fresh / stale (and which input changed) / missing
+uv run ab report books/x            # writes work/REPORT.md: stage table, speakers, lines to review, log tail
+uv run ab fix books/x c000p0012s00 --speaker "Mrs. Bennet"   # correct + lock a line; render redoes it
+uv run ab play books/x c000p0012s00 # path of that line's audio
+```
+
+`work/` is numbered by stage so it reads in pipeline order:
+
+| File | What it is |
+|---|---|
+| `01-chapters.json` | ingest output |
+| `02-chapters.norm.json` | normalize output |
+| `03-llm.jsonl` | every prompt and raw response from cast and attribute |
+| `04-lines.jsonl` | the machine-readable script; `04-script.md` is the same as a screenplay with `(?)` `(!)` `[x]` `[lock]` markers; `04-attribute.review.txt` lists lines the rules could not resolve |
+| `05-audio/<hash>.wav` | one file per rendered line; `05-audio/by-line/<id>.wav` symlinks make a line easy to find |
+| `06-verify.jsonl` | transcripts and error rates; `06-verify.review.txt` lists lines still failing |
+| `07-chapters/`, `07-ffmetadata.txt` | build intermediates |
+| `run.log` | timestamped stage summaries and durations across runs |
+| `REPORT.md` | written at the end of every `ab run` |
+
+Each `*.inputs` stamp stores the named input hashes a stage was built from,
+which is how `ab status` can say "stale: cast changed".

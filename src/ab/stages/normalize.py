@@ -18,17 +18,22 @@ _EN_ABBREV = {
 _ZH_DIGITS = "零一二三四五六七八九"
 
 
+def inputs(paths: BookPaths, cfg: BookConfig) -> dict:
+    return {"chapters": cache.file_hash(paths.chapters) if paths.chapters.exists() else "",
+            "language": cfg.language, "overrides": cache.content_hash(paths.load_overrides())}
+
+
 def run(paths: BookPaths, cfg: BookConfig, force: bool = False):
     overrides = paths.load_overrides()
-    inputs = cache.content_hash("normalize", cache.file_hash(paths.chapters), cfg.language, overrides)
-    if not force and cache.is_fresh(paths.chapters_norm, inputs):
+    inp = inputs(paths, cfg)
+    if not force and cache.is_fresh(paths.chapters_norm, inp):
         return paths.chapters_norm
     book = ChapterList.model_validate_json(paths.chapters.read_text(encoding="utf-8"))
     for ch in book.chapters:
         ch.title = normalize(ch.title, cfg.language, overrides)
         ch.paragraphs = [normalize(p, cfg.language, overrides) for p in ch.paragraphs]
     paths.chapters_norm.write_text(book.model_dump_json(indent=1), encoding="utf-8")
-    cache.mark_fresh(paths.chapters_norm, inputs)
+    cache.mark_fresh(paths.chapters_norm, inp)
     return paths.chapters_norm
 
 

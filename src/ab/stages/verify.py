@@ -12,10 +12,10 @@ import re
 import unicodedata
 
 import soundfile as sf
-from rich import print
 from rich.progress import track
 
 from ab.config import BookConfig, BookPaths
+from ab.log import note
 from ab.models import VerifyResult
 from ab.stages import render
 from ab.stages.attribute import read_lines, write_lines
@@ -50,7 +50,7 @@ def run(paths: BookPaths, cfg: BookConfig, force: bool = False):
         write_lines(paths, lines)
         force = False
         if failed:
-            print(f"verify: re-rendering {failed} lines (attempt {attempt + 2})")
+            note(paths, f"verify: re-rendering {failed} lines (attempt {attempt + 2})")
             render.run(paths, cfg)
         else:
             break
@@ -60,14 +60,17 @@ def run(paths: BookPaths, cfg: BookConfig, force: bool = False):
             f.write(json.dumps(r.model_dump(), ensure_ascii=False) + "\n")
     lines = read_lines(paths)
     bad = [ln for ln in lines if ln.id in results and not results[ln.id].ok]
-    review = paths.work / "verify.review.txt"
+    review = paths.verify_review
     with review.open("w", encoding="utf-8") as f:
-        f.write("# Lines still above the error threshold after re-rendering. Listen and fix by hand.\n")
+        f.write("# Lines still above the error threshold after re-rendering. "
+                "Listen (05-audio/by-line/<id>.wav) and fix by hand.\n")
         for ln in bad:
             f.write(f"{ln.id}\t{ln.error_rate:.2f}\t{ln.text[:100]}\n")
     rates = [ln.error_rate for ln in lines if ln.error_rate is not None]
     mean = sum(rates) / len(rates) if rates else 0.0
-    print(f"verify: {len(rates)} lines checked, mean error {mean:.3f}, {len(bad)} above threshold")
+    note(paths, f"verify[{model_name}]: {len(rates)} lines checked, mean error {mean:.3f}, "
+         f"{len(bad)} above threshold")
+    write_lines(paths, lines)  # refresh the script with verify flags
     return paths.verify
 
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import soundfile as sf
 from rich.progress import track
@@ -9,6 +11,7 @@ from rich.progress import track
 from ab import cache
 from ab.audio import crossfade_concat
 from ab.config import BookConfig, BookPaths
+from ab.log import note
 from ab.stages.attribute import read_lines, write_lines
 from ab.text import chunk_text
 from ab.tts import load_backend
@@ -33,6 +36,7 @@ def _run(paths: BookPaths, cfg: BookConfig, backend, force: bool):
                if force or l.backend != backend.name
                or not (l.audio and (paths.work / l.audio).exists())]
     voices = cfg.voice_map(cfg.tts.backend)
+    synthesized = 0
     for ln in track(missing, description=f"render[{backend.name}]"):
         voice = resolve_voice(voices, ln.speaker)
         if (paths.root / voice).is_file():
@@ -41,6 +45,7 @@ def _run(paths: BookPaths, cfg: BookConfig, backend, force: bool):
         key = cache.render_key(backend.name, voice, params, ln.text)
         out = paths.audio / f"{key}.wav"
         if force or not out.exists():
+            synthesized += 1
             pieces = [backend.synthesize(chunk, voice, lang=ln.lang, **params)
                       for chunk in chunk_text(ln.text, ln.lang, backend.max_chars)]
             audio = crossfade_concat(pieces, backend.sample_rate) if pieces else np.zeros(0, np.float32)
@@ -49,7 +54,21 @@ def _run(paths: BookPaths, cfg: BookConfig, backend, force: bool):
         ln.backend = backend.name
         ln.error_rate = None  # verify must look at the new audio
     write_lines(paths, lines)
+    _link_by_line(paths, lines)
+    note(paths, f"render[{backend.name}]: {synthesized} lines synthesized, "
+         f"{len(missing) - synthesized} from cache, {len(lines) - len(missing)} untouched")
     return paths.audio
+
+
+def _link_by_line(paths: BookPaths, lines) -> None:
+    """05-audio/by-line/<line id>.wav -> ../<hash>.wav, so a line is easy to find and play."""
+    d = paths.audio_by_line
+    d.mkdir(parents=True, exist_ok=True)
+    for old in d.glob("*.wav"):
+        old.unlink()
+    for ln in lines:
+        if ln.audio:
+            (d / f"{ln.id}.wav").symlink_to(Path("..") / Path(ln.audio).name)
 
 
 def resolve_voice(voices: dict[str, str], speaker: str) -> str:

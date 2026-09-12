@@ -31,14 +31,40 @@ def stamp_path(artifact: Path) -> Path:
     return artifact.with_suffix(artifact.suffix + ".inputs")
 
 
-def is_fresh(artifact: Path, inputs_hash: str) -> bool:
-    """True if artifact exists and was built from inputs with this hash."""
+def is_fresh(artifact: Path, inputs: str | dict) -> bool:
+    """True if artifact exists and was built from these inputs."""
+    return artifact.exists() and read_stamp(artifact) == _norm(inputs)
+
+
+def mark_fresh(artifact: Path, inputs: str | dict) -> None:
+    """Record what the artifact was built from. A dict of named components is
+    stored as JSON so `ab status` can explain which input changed."""
+    stamp_path(artifact).write_text(json.dumps(_norm(inputs), sort_keys=True))
+
+
+def read_stamp(artifact: Path) -> dict | str | None:
     stamp = stamp_path(artifact)
-    return artifact.exists() and stamp.exists() and stamp.read_text().strip() == inputs_hash
+    if not stamp.exists():
+        return None
+    raw = stamp.read_text().strip()
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return raw
 
 
-def mark_fresh(artifact: Path, inputs_hash: str) -> None:
-    stamp_path(artifact).write_text(inputs_hash)
+def _norm(inputs):
+    return inputs if isinstance(inputs, dict) else str(inputs)
+
+
+def stale_reasons(artifact: Path, inputs: dict) -> list[str]:
+    """Which named inputs differ from the stamp (empty list == fresh)."""
+    if not artifact.exists():
+        return ["missing"]
+    old = read_stamp(artifact)
+    if not isinstance(old, dict):
+        return ["no stamp"]
+    return [k for k in inputs if old.get(k) != inputs[k]] or (["unknown"] if old != inputs else [])
 
 
 def file_hash(path: Path) -> str:

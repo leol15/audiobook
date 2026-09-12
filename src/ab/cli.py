@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 import typer
 from rich import print
 
 from ab.config import BookPaths
+from ab.log import note
 from ab.stages import attribute, build, cast, ingest, normalize, render, verify
 
 app = typer.Typer(no_args_is_help=True, help="Local audiobook narration pipeline.")
@@ -66,16 +68,22 @@ def run(
         cfg.tts.params = {}
     skips = {s.strip() for s in skip.split(",") if s.strip()}
     forcing = False
+    note(paths, f"run: to={to} skip={sorted(skips)} force={force or '-'} tts={cfg.tts.backend}")
     for name, fn in STAGES:
         if force and name == force:
             forcing = True
         if name in skips:
             print(f"[dim]{name}: skipped[/]")
         else:
+            t0 = time.time()
             out = fn(paths, cfg, force=forcing)
             print(f"[green]{name}[/] -> {out}")
+            note(paths, f"{name}: done in {time.time() - t0:.1f}s", console=False)
         if name == to:
             break
+    from ab.report import write_report
+
+    print(f"[dim]report -> {write_report(paths, cfg)}[/]")
 
 
 @app.command()
@@ -108,3 +116,61 @@ def voices_design(
     paths = _book(book)
     out = voices.run(paths, paths.load_config(), force=force, backend_name=backend)
     print(f"[green]voices-design[/] -> {out}")
+
+
+@app.command()
+def status(book: Path = typer.Argument(..., help="Book directory")):
+    """Show each stage: fresh, stale (and why), or missing."""
+    from rich.table import Table
+
+    from ab.report import stage_status
+
+    paths = _book(book)
+    cfg = paths.load_config()
+    color = {"fresh": "green", "stale": "yellow", "missing": "red"}
+    table = Table(title=f"{cfg.title} · {cfg.language} · tts={cfg.tts.backend}")
+    table.add_column("stage")
+    table.add_column("state")
+    table.add_column("detail")
+    table.add_column("artifact", style="dim")
+    for r in stage_status(paths, cfg):
+        c = color.get(r["state"], "white")
+        table.add_row(r["stage"], f"[{c}]{r['state']}[/]", r["detail"],
+                      str(Path(r["artifact"]).relative_to(paths.root)))
+    print(table)
+
+
+@app.command()
+def report(book: Path = typer.Argument(..., help="Book directory")):
+    """Write work/REPORT.md (stage table, speakers, lines to review) and print its path."""
+    from ab.report import write_report
+
+    paths = _book(book)
+    print(f"[green]report[/] -> {write_report(paths, paths.load_config())}")
+
+
+@app.command()
+def fix(
+    book: Path = typer.Argument(..., help="Book directory"),
+    line_id: str = typer.Argument(..., help="Line id, e.g. c000p0012s00 (see 04-script.md)"),
+    speaker: str | None = typer.Option(None, help="Cast name, alias, or 'narrator'"),
+    text: str | None = typer.Option(None, help="Replace the line's text"),
+    unlock: bool = typer.Option(False, help="Let the attribute stage overwrite this line again"),
+):
+    """Correct one line's speaker or text, lock it, and queue it for re-render."""
+    from ab.report import fix_line
+
+    paths = _book(book)
+    ln = fix_line(paths, line_id, speaker=speaker, text=text, unlock=unlock)
+    note(paths, f"fix: {ln.id} -> {ln.speaker} {'(unlocked)' if unlock else '(locked)'}: {ln.text[:60]}")
+    print("[dim]run `ab render` (or `ab run`) to re-render it[/]")
+
+
+@app.command()
+def play(book: Path = typer.Argument(...), line_id: str = typer.Argument(...)):
+    """Print the audio path for a line id (pipe to a player)."""
+    paths = _book(book)
+    p = paths.audio_by_line / f"{line_id}.wav"
+    if not p.exists():
+        raise SystemExit(f"no audio for {line_id}; rendered lines are listed in {paths.audio_by_line}")
+    print(str(p.resolve()))

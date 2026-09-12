@@ -10,6 +10,7 @@ import soundfile as sf
 
 from ab.audio import silence
 from ab.config import BookConfig, BookPaths
+from ab.log import note
 from ab.models import ChapterList
 from ab.stages.attribute import read_lines
 
@@ -19,7 +20,7 @@ def run(paths: BookPaths, cfg: BookConfig, force: bool = False):
     book = ChapterList.model_validate_json(paths.chapters_norm.read_text(encoding="utf-8"))
     sr = _sample_rate(paths, lines)
     paths.out.mkdir(parents=True, exist_ok=True)
-    chapter_dir = paths.work / "chapters"
+    chapter_dir = paths.chapter_audio
     chapter_dir.mkdir(exist_ok=True)
 
     by_chapter: dict[int, list] = {}
@@ -51,7 +52,7 @@ def run(paths: BookPaths, cfg: BookConfig, force: bool = False):
 
     concat_list = chapter_dir / "concat.txt"
     concat_list.write_text("".join(f"file '{f.resolve()}'\n" for f in chapter_files))
-    meta = paths.work / "ffmetadata.txt"
+    meta = paths.ffmetadata
     meta.write_text(_ffmetadata(cfg, markers), encoding="utf-8")
 
     backends = {ln.backend for ln in lines if ln.backend}
@@ -65,7 +66,8 @@ def run(paths: BookPaths, cfg: BookConfig, force: bool = False):
         cmd += ["-map", "2:v", "-c:v", "copy", "-disposition:v", "attached_pic"]
     cmd += ["-af", f"loudnorm=I={cfg.loudness_lufs}:TP=-1.5:LRA=11",
             "-c:a", "aac", "-b:a", "64k", "-ac", "1", "-ar", "44100", "-movflags", "+faststart", str(out)]
-    subprocess.run(cmd, check=True)
+    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    note(paths, f"build: {out.name} ({t / 60:.1f} min, {len(chapter_files)} chapters)")
     return out
 
 

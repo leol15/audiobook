@@ -8,11 +8,11 @@ alias merge. The LLM returns names only; no book text is rewritten.
 from __future__ import annotations
 
 import yaml
-from rich import print
 from rich.progress import track
 
 from ab.config import BookConfig, BookPaths
 from ab.llm import Ollama
+from ab.log import note
 from ab.models import ChapterList
 
 _DISCOVER_SCHEMA = {
@@ -86,7 +86,7 @@ def run(paths: BookPaths, cfg: BookConfig, force: bool = False):
     if paths.cast.exists() and not force:
         return paths.cast
     lang = cfg.language
-    llm = Ollama(log=paths.work / "llm.jsonl")
+    llm = Ollama(log=paths.llm_log)
     book = ChapterList.model_validate_json(paths.chapters_norm.read_text(encoding="utf-8"))
 
     found: list[dict] = []
@@ -122,6 +122,6 @@ def run(paths: BookPaths, cfg: BookConfig, force: bool = False):
         + yaml.safe_dump({"characters": characters}, allow_unicode=True, sort_keys=False),
         encoding="utf-8",
     )
-    print(f"cast: {len(characters)} characters -> {paths.cast}")
+    note(paths, f"cast: {len(characters)} characters -> {paths.cast}")
     llm.unload()
     return paths.cast

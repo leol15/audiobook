@@ -84,21 +84,31 @@ def _fold(s: str) -> str:
 
 
 class BookPaths:
-    """Filesystem layout of one book directory."""
+    """Filesystem layout of one book directory. Work artifacts are numbered by stage."""
 
     def __init__(self, root: Path):
         self.root = root
         self.config = root / "book.yaml"
         self.cast = root / "cast.yaml"
         self.overrides = root / "overrides.yaml"
+        self.voices_dir = root / "voices"
         self.work = root / "work"
         self.out = root / "out"
-        self.chapters = self.work / "chapters.json"
-        self.chapters_norm = self.work / "chapters.norm.json"
-        self.lines = self.work / "lines.jsonl"
-        self.audio = self.work / "audio"
-        self.verify = self.work / "verify.jsonl"
-        self.voices_dir = root / "voices"
+        w = self.work
+        self.chapters = w / "01-chapters.json"
+        self.chapters_norm = w / "02-chapters.norm.json"
+        self.llm_log = w / "03-llm.jsonl"          # cast + attribute exchanges
+        self.lines = w / "04-lines.jsonl"
+        self.script = w / "04-script.md"           # human-readable view of lines
+        self.attribute_review = w / "04-attribute.review.txt"
+        self.audio = w / "05-audio"
+        self.audio_by_line = w / "05-audio" / "by-line"
+        self.verify = w / "06-verify.jsonl"
+        self.verify_review = w / "06-verify.review.txt"
+        self.chapter_audio = w / "07-chapters"
+        self.ffmetadata = w / "07-ffmetadata.txt"
+        self.run_log = w / "run.log"
+        self.report = w / "REPORT.md"
 
     @property
     def source(self) -> Path:

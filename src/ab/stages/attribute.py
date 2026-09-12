@@ -13,11 +13,11 @@ from __future__ import annotations
 
 import json
 
-from rich import print
 from rich.progress import track
 
 from ab import cache
 from ab.config import BookConfig, BookPaths, Cast
+from ab.log import note
 from ab.models import ChapterList, Line
 from ab.quotes import ParaSpans, extract
 
@@ -65,12 +65,15 @@ WINDOW = 12   # paragraphs per LLM call
 CONTEXT = 4   # preceding paragraphs shown for context
 
 
+def inputs(paths: BookPaths, cfg: BookConfig) -> dict:
+    return {"chapters_norm": cache.file_hash(paths.chapters_norm) if paths.chapters_norm.exists() else "",
+            "language": cfg.language, "cast": cache.content_hash(paths.load_cast().model_dump())}
+
+
 def run(paths: BookPaths, cfg: BookConfig, force: bool = False):
     cast = paths.load_cast()
-    inputs = cache.content_hash(
-        "attribute", cache.file_hash(paths.chapters_norm), cfg.language, cast.model_dump()
-    )
-    if not force and cache.is_fresh(paths.lines, inputs):
+    inp = inputs(paths, cfg)
+    if not force and cache.is_fresh(paths.lines, inp):
         return paths.lines
     locked = {ln.id: ln for ln in read_lines(paths) if ln.locked} if paths.lines.exists() else {}
     book = ChapterList.model_validate_json(paths.chapters_norm.read_text(encoding="utf-8"))
@@ -80,7 +83,7 @@ def run(paths: BookPaths, cfg: BookConfig, force: bool = False):
     llm = None
     if cast.characters:
         from ab.llm import Ollama
-        llm = Ollama(log=paths.work / "llm.jsonl")
+        llm = Ollama(log=paths.llm_log)
 
     for ch in track(book.chapters, description="attribute"):
         if not cast.characters:
@@ -106,12 +109,13 @@ def run(paths: BookPaths, cfg: BookConfig, force: bool = False):
                                   confidence=sp.confidence))
     write_lines(paths, lines)
     _write_review(paths, lines)
-    cache.mark_fresh(paths.lines, inputs)
+    cache.mark_fresh(paths.lines, inp)
     if llm:
         llm.unload()
     dialogue = sum(1 for ln in lines if ln.kind == "dialogue")
-    print(f"attribute: {stats['narration']} narration, {dialogue} dialogue "
-          f"({stats['rules']} by rules, {stats['llm']} by LLM, {stats['unknown']} unknown)")
+    note(paths, f"attribute: {stats['narration']} narration, {dialogue} dialogue "
+         f"({stats['rules']} by rules, {stats['llm']} by LLM, {stats['unknown']} unknown, "
+         f"{len(locked)} locked)")
     return paths.lines
 
 
@@ -161,9 +165,9 @@ def _render_para(ps: ParaSpans) -> str:
 
 def _write_review(paths: BookPaths, lines: list[Line]) -> None:
     low = [ln for ln in lines if ln.kind == "dialogue" and ln.confidence < 0.85]
-    f = paths.work / "attribute.review.txt"
+    f = paths.attribute_review
     with f.open("w", encoding="utf-8") as fh:
-        fh.write("# Dialogue lines not resolved by rules. Fix speaker in lines.jsonl and set locked: true.\n")
+        fh.write("# Dialogue lines not resolved by rules. Fix with: ab fix <book> <id> --speaker NAME\n")
         for ln in low:
             fh.write(f"{ln.id}\t{ln.speaker}\t{ln.confidence:.2f}\t{ln.text[:100]}\n")
 
@@ -174,7 +178,10 @@ def read_lines(paths: BookPaths) -> list[Line]:
 
 
 def write_lines(paths: BookPaths, lines: list[Line]) -> None:
+    from ab.report import write_script
+
     paths.work.mkdir(parents=True, exist_ok=True)
     with paths.lines.open("w", encoding="utf-8") as f:
         for ln in lines:
             f.write(json.dumps(ln.model_dump(), ensure_ascii=False) + "\n")
+    write_script(paths, lines)

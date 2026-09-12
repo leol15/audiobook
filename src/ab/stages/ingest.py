@@ -6,6 +6,7 @@ import re
 
 from ab import cache
 from ab.config import BookConfig, BookPaths
+from ab.log import note
 from ab.models import Chapter, ChapterList
 from ab.text import canonicalize_quotes
 
@@ -22,10 +23,15 @@ _GUTENBERG_END = re.compile(r"^\*\*\* ?END OF (THE|THIS) PROJECT GUTENBERG", re.
 _ZH_PUNCT = str.maketrans({"　": " ", "﹁": '"', "﹂": '"', "．": "."})  # full-width period -> ASCII
 
 
+def inputs(paths: BookPaths, cfg: BookConfig) -> dict:
+    return {"source": cache.file_hash(paths.source), "language": cfg.language,
+            "chapter_regex": cfg.chapter_regex or ""}
+
+
 def run(paths: BookPaths, cfg: BookConfig, force: bool = False):
     src = paths.source
-    inputs = cache.content_hash("ingest", cache.file_hash(src), cfg.language, cfg.chapter_regex)
-    if not force and cache.is_fresh(paths.chapters, inputs):
+    inp = inputs(paths, cfg)
+    if not force and cache.is_fresh(paths.chapters, inp):
         return paths.chapters
     text = src.read_text(encoding="utf-8")
     chapters = parse(text, cfg.language, cfg.chapter_regex, is_markdown=src.suffix == ".md")
@@ -34,7 +40,8 @@ def run(paths: BookPaths, cfg: BookConfig, force: bool = False):
         ChapterList(language=cfg.language, chapters=chapters).model_dump_json(indent=1),
         encoding="utf-8",
     )
-    cache.mark_fresh(paths.chapters, inputs)
+    cache.mark_fresh(paths.chapters, inp)
+    note(paths, f"ingest: {len(chapters)} chapters, {sum(len(c.paragraphs) for c in chapters)} paragraphs")
     return paths.chapters
 
 
