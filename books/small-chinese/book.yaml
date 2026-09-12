@@ -1,10 +1,11 @@
 title: 恐怖时代
 author: Unknown
 language: zh
-chapter_regex: '^\d{3}\s+\S.*$'
+chapter_regex: ^\d{3}\s+\S.*$
 tts:
   backend: kokoro
-  params: { speed: 1.0 }
+  params:
+    speed: 1.0
 voices:
   kokoro:
     narrator: zm_yunyang
@@ -14,9 +15,9 @@ voices:
     未知角色3: zf_xiaoni
     _default: zf_xiaoxiao
   qwen3tts:
-    narrator: Uncle_Fu
-    林风: Dylan
-    未知角色1: Serena
-    未知角色2: Eric
-    未知角色3: Vivian
-    _default: Vivian
+    narrator: voices/narrator.wav
+    林风: voices/林风.wav
+    未知角色1: voices/未知角色1.wav
+    未知角色2: voices/未知角色2.wav
+    未知角色3: voices/未知角色3.wav
+    _default: voices/narrator.wav

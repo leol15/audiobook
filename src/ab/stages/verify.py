@@ -99,6 +99,12 @@ def error_rate(reference: str, hypothesis: str, lang: str, with_edits: bool = Fa
 
 def _tokens(s: str, lang: str) -> list[str]:
     s = unicodedata.normalize("NFKC", s).lower()
+    if lang == "zh":
+        from ab.stages.normalize import _zh_number
+
+        # whisper writes ages and counts as digits; the source spells them out.
+        # Do this before stripping punctuation so "15、6" stays two numbers.
+        s = re.sub(r"\d+", lambda m: _zh_number(int(m.group(0))), s)
     s = re.sub(r"[^\w\s]", "", s)
     if lang == "zh":
         # Compare pronunciation, not characters: whisper freely emits

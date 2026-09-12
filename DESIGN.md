@@ -235,7 +235,13 @@ off by default and enabled per book; it is not needed with Kokoro.
   | English sample | Kokoro-82M | 0.037 (WER) | 0 | 0 |
   | English sample | Chatterbox Multilingual (default voice) | 0.200 (WER) | 6 | 3 |
   | Chinese sample | Kokoro-82M | 0.053 (pinyin) | 1 | 2 |
-  | Chinese sample | Qwen3-TTS 1.7B CustomVoice | 0.023 (pinyin) | 0 | 0 |
+  | Chinese sample | Qwen3-TTS 1.7B CustomVoice (presets) | 0.023 (pinyin) | 0 | 0 |
+  | Chinese sample | Qwen3-TTS 1.7B Base, cloning designed clips | 0.012 (pinyin) | 1 | 1 |
+
+  The designed-and-cloned voices scored best of all, and the one remaining
+  flag is whisper hearing 唯有 as 我有. Whisper's transcripts also write
+  numbers as digits, so the Chinese comparison spells digits out before
+  stripping punctuation.
 
   On Mandarin the ranking flips: Qwen3-TTS is both more accurate and, to the
   ear, far more natural than Kokoro's Mandarin voices. It costs speed: about

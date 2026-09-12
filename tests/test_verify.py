@@ -17,3 +17,5 @@ def test_cer_zh_is_phonetic():
     # a real substitution still counts
     assert error_rate("柳城", "流程", "zh") == 0.0  # liu cheng == liu cheng: same sounds
     assert error_rate("是啊万一", "十二万一", "zh") > 0
+    # digits in the transcript match spelled-out numerals in the source
+    assert error_rate("一群十五、六岁的少年", "一群15、6歲的少年", "zh") == 0.0
