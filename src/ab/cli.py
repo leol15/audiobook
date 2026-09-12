@@ -40,6 +40,19 @@ def _book(path: Path) -> BookPaths:
 _CHAPTER_STAGES = {"attribute", "render", "verify", "build"}
 
 
+def _gate(paths: BookPaths, cfg) -> None:
+    """Refuse to render with a broken voice map; print warnings otherwise."""
+    from ab.check import check
+
+    errors, warnings = check(paths, cfg)
+    for w in warnings:
+        print(f"[yellow]check:[/] {w}")
+    if errors:
+        for e in errors:
+            print(f"[red]check:[/] {e}")
+        raise SystemExit("fix book.yaml voices (see `ab check`) before rendering")
+
+
 def _chapters(spec: str | None) -> set[int] | None:
     """'3', '0,4', '2-5' -> chapter indexes; None = all."""
     if not spec:
@@ -62,6 +75,8 @@ def _make_cmd(name, fn):
         cfg = paths.load_config()
         if tts:
             cfg.tts.backend = tts
+        if name == "render":
+            _gate(paths, cfg)
         if name in _CHAPTER_STAGES:
             out = fn(paths, cfg, force=force, chapters=_chapters(chapters))
         elif chapters:
@@ -94,6 +109,8 @@ def run(
         cfg.tts.params = {}
     skips = {s.strip() for s in skip.split(",") if s.strip()}
     forcing = False
+    if "render" not in skips and _ORDER.index(to) >= _ORDER.index("render"):
+        _gate(paths, cfg)
     note(paths, f"run: to={to} skip={sorted(skips)} force={force or '-'} tts={cfg.tts.backend}")
     for name, fn in STAGES:
         if force and name == force:
@@ -238,3 +255,23 @@ def new(
     paths = create(book, source=source, language=language, title=title, author=author,
                    chapter_regex=chapter_regex, backend=backend)
     ingest_preview(paths)
+
+
+@app.command()
+def check(
+    book: Path = typer.Argument(..., help="Book directory"),
+    tts: str | None = typer.Option(None, help="Backend to check (default: book.yaml tts.backend)"),
+):
+    """Validate book.yaml voices against cast.yaml and the backend's voice list."""
+    from ab.check import check as _check
+
+    paths = _book(book)
+    cfg = paths.load_config()
+    errors, warnings = _check(paths, cfg, backend=tts)
+    for w in warnings:
+        print(f"[yellow]warning[/] {w}")
+    for e in errors:
+        print(f"[red]error[/] {e}")
+    if not errors and not warnings:
+        print("[green]ok[/] voices, cast and backend are consistent")
+    raise typer.Exit(code=1 if errors else 0)

@@ -144,6 +144,12 @@ uv run ab fix books/x c000p0012s00 --speaker "Mrs. Bennet"   # correct + lock a 
 uv run ab play books/x c000p0012s00 # path of that line's audio
 ```
 
+`ab check` validates `book.yaml` voices against `cast.yaml` and the backend:
+unknown cast names (with a did-you-mean), unknown or wrong-language voice ids,
+missing clip files, and a missing narrator are errors and block `ab run` and
+`ab render`; main cast members left on `_default`, alias matches, and shared
+voices are warnings.
+
 `work/` is numbered by stage so it reads in pipeline order:
 
 | File | What it is |
