@@ -21,6 +21,9 @@ class Pauses(BaseModel):
 class TTSConfig(BaseModel):
     backend: str = "kokoro"
     params: dict = Field(default_factory=dict)  # backend-specific, part of cache key
+    # Lines per model call for backends that batch (qwen3tts). None = backend default.
+    # Not part of the cache key: batching changes throughput, not the cache identity.
+    batch: int | None = None
 
 
 class VerifyConfig(BaseModel):

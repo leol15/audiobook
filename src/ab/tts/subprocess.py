@@ -26,6 +26,7 @@ class SubprocessBackend:
     max_chars = 300
     sample_rate = 24000
     languages: ClassVar[set[str]] = {"en", "zh"}
+    batch_size = 1  # lines per request; raised by workers that announce {"batch": true}
 
     def __init__(self, python: str, worker: str, name: str | None = None,
                  max_chars: int | None = None, **params):
@@ -37,6 +38,7 @@ class SubprocessBackend:
             self.max_chars = max_chars
         self.params = params
         self._proc: subprocess.Popen | None = None
+        self._worker_batches = False
         self._tmp = Path(tempfile.mkdtemp(prefix="ab-tts-"))
 
     def _start(self) -> None:
@@ -54,6 +56,7 @@ class SubprocessBackend:
         if not hello.get("ready"):
             raise SystemExit(f"worker failed to start: {hello}")
         self.sample_rate = int(hello.get("sr", self.sample_rate))
+        self._worker_batches = bool(hello.get("batch"))
 
     def _read(self) -> dict:
         """Next JSON line from the worker; anything else is forwarded to stderr."""
@@ -87,7 +90,26 @@ class SubprocessBackend:
         out = self._tmp / "chunk.wav"
         res = self.request({"text": text, "voice": voice, "lang": lang, "out": str(out),
                             "params": {**self.params, **params}})
-        audio, sr = sf.read(res["path"], dtype="float32")
+        return self._load(res["path"])
+
+    def synthesize_batch(self, texts: list[str], voice: str, *, lang: str, **params) -> list[np.ndarray]:
+        """One worker call for several texts in the same voice. Falls back to one
+        request per text if the worker predates batching or the batch fails."""
+        self._start()
+        if len(texts) > 1 and self._worker_batches:
+            items = [{"text": t, "out": str(self._tmp / f"chunk{i}.wav")} for i, t in enumerate(texts)]
+            try:
+                res = self.request({"kind": "batch", "items": items, "voice": voice, "lang": lang,
+                                    "params": {**self.params, **params}})
+            except RuntimeError as e:
+                sys.stderr.write(f"[worker] batch of {len(texts)} failed, retrying one by one: "
+                                 f"{str(e).splitlines()[0]}\n")
+            else:
+                return [self._load(p) for p in res["paths"]]
+        return [self.synthesize(t, voice, lang=lang, **params) for t in texts]
+
+    def _load(self, path: str) -> np.ndarray:
+        audio, sr = sf.read(path, dtype="float32")
         if sr != self.sample_rate:
             raise RuntimeError(f"worker sample rate {sr} != {self.sample_rate}")
         return audio.reshape(-1)

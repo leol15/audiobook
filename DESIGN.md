@@ -227,6 +227,54 @@ a fixed amount of Python and kernel-launch time, and the card idles between
 launches. That points at batching (amortize the per-step cost over many
 lines) rather than at a smaller model or faster attention kernels.
 
+**Batching.** `generate_voice_clone` and `generate_custom_voice` accept lists
+of texts and run them as one left-padded batch through the talker. The worker
+protocol gained `{"kind": "batch", "items": [{text, out}, ...], voice, lang,
+params}` (one model call, one response with `paths`), and the worker
+announces `"batch": true` in its hello so the parent knows it may send them.
+`SubprocessBackend.synthesize_batch` uses it and falls back to one request per
+text if the worker is old or the batch fails. The render stage plans all
+pending (line, chunk) items first, groups them by voice and params (a batch
+must share one reference clip), sorts each group by text length so a batch
+finishes together (batched generation runs until its longest member stops),
+and sends `tts.batch` items per call (default from the backend, 1 for the
+others). Multi-chunk lines are reassembled when all their chunks are back.
+Batching is not part of the cache key; a re-render of one line in a batch of
+different composition gives different sampled audio, the same way a new seed
+would.
+
+Two things were needed to make large batches fit in 16 GB:
+
+- The codec decoder (vocoder) was called on the whole batch; its activations
+  cost ~0.7 GB per sequence (batch 20 peaked at 19 GB and spilled). The
+  worker now vocodes one sequence at a time (`decode_chunk`, default 1):
+  identical audio, the talker's ~5 GB is the peak, and the decode step is
+  under a second for 20 lines either way.
+- The reference clip was re-encoded on every request. The worker caches the
+  clone prompt per file, which also trims a little per-line overhead.
+
+Same 20 lines, all `sdpa`, sorted batches, vocoder chunked unless noted:
+
+| Config | calls | x realtime | GPU busy | peak VRAM |
+|---|---|---|---|---|
+| 1.7B, batch 1 | 20 | 0.43 | 16 % | 5.0 GB |
+| 1.7B, batch 4 (unsorted, whole-batch vocode) | 5 | 0.92 | 18 % | 7.2 GB |
+| 1.7B, batch 8 (unsorted, whole-batch vocode) | 3 | 1.28 | 20 % | 10.2 GB |
+| 1.7B, batch 20 (unsorted, whole-batch vocode) | 1 | 1.20 | 59 % | 19.1 GB (spilled) |
+| 1.7B, batch 8 | 3 | 1.58 | 24 % | 9.9 GB |
+| 1.7B, batch 12 | 2 | 1.70 | 34 % | 12.4 GB |
+| 1.7B, batch 16 | 2 | 1.87 | 19 % | 5.5 GB |
+| 1.7B, batch 20 | 1 | 2.71 | 21 % | 6.0 GB |
+| 0.6B, batch 1 | 20 | 0.40 | 15 % | |
+| 0.6B, batch 16 | 2 | 1.83 | 18 % | |
+
+Wall time per call is nearly independent of the batch size (about 25 s for
+these ~10 s lines whether the call carries 1 line or 20), so throughput is
+roughly linear in the batch until the GPU saturates, which it has not at 20.
+The 0.6B model is no faster than 1.7B at any batch size, which is the same
+finding from the other side: compute is not the bottleneck, so there is no
+reason to give up the larger model's quality.
+
 ### 6. verify
 
 Autoregressive TTS skips sentences, repeats phrases, and invents words, and

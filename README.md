@@ -55,8 +55,13 @@ uv run ab build  books/small-chinese                  # -> out/<title>.qwen3tts-
 
 Voice ids are preset names (`Vivian`, `Serena`, `Uncle_Fu`, `Dylan`, `Eric`
 for Mandarin; `Ryan`, `Aiden` for English) or a path to a reference wav.
-Expect roughly 0.4x realtime; Chinese verification compares pinyin, so
-whisper's script and homophone choices do not count as errors.
+The worker renders lines in batches (`tts.batch` in `book.yaml`, default 32
+for this backend): one model call per batch takes about as long as a single
+line, so a batch of 32 runs several times faster than realtime where one line
+at a time ran at 0.4x. Lower it if you hit CUDA out-of-memory, raise it if
+VRAM allows (each line in a batch costs well under 100 MB). Chinese
+verification compares pinyin, so whisper's script and homophone choices do
+not count as errors.
 A `.txt` next to the wav with its transcript improves cloning. Params under
 `tts.params`: `size` (`1.7B` default, `0.6B` for speed), `instruct` (style
 text for presets, e.g. `"calm, low voice"`), `seed`.

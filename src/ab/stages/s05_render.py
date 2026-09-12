@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
@@ -38,30 +40,102 @@ def _run(paths: BookPaths, cfg: BookConfig, backend, force: bool):
                if force or l.backend != backend.name
                or not (l.audio and (paths.work / l.audio).exists())]
     voices = cfg.voice_map(cfg.tts.backend)
-    synthesized = 0
-    for done, ln in enumerate(track(missing, description=f"render[{backend.name}]"), 1):
+    batch_size = cfg.tts.batch or getattr(backend, "batch_size", 1)
+    if batch_size > 1 and not hasattr(backend, "synthesize_batch"):
+        batch_size = 1
+
+    # Plan: every missing line gets its cache path; lines without cached audio
+    # become (line, chunk) work items grouped by voice+params, so one model
+    # call renders many lines in the same voice.
+    jobs: list[_Job] = []
+    for ln in missing:
         voice = resolve_voice(voices, ln.speaker)
         if (paths.root / voice).is_file():
             voice = str((paths.root / voice).resolve())  # reference clip, not a preset id
         params = {**cfg.tts.params, "seed": ln.attempts}
         key = cache.render_key(backend.name, voice, params, ln.text)
         out = paths.audio / f"{key}.wav"
-        if force or not out.exists():
-            synthesized += 1
-            pieces = [backend.synthesize(chunk, voice, lang=ln.lang, **params)
-                      for chunk in chunk_text(ln.text, ln.lang, backend.max_chars)]
-            audio = crossfade_concat(pieces, backend.sample_rate) if pieces else np.zeros(0, np.float32)
-            sf.write(out, audio, backend.sample_rate)
-        ln.audio = str(out.relative_to(paths.work))
-        ln.backend = backend.name
-        ln.error_rate = None  # verify must look at the new audio
-        if done % CHECKPOINT_EVERY == 0:
-            write_lines(paths, lines)  # progress survives an interrupted run; `ab status` sees it
+        chunks = chunk_text(ln.text, ln.lang, backend.max_chars) if force or not out.exists() else None
+        jobs.append(_Job(ln, voice, params, out, chunks))
+
+    todo = [j for j in jobs if j.chunks is not None]
+    groups: dict[tuple, list[_Job]] = {}
+    for j in todo:
+        groups.setdefault((j.voice, json.dumps(j.params, sort_keys=True)), []).append(j)
+    batches = list(_batches(groups, batch_size))
+
+    finished = 0
+    progress = track(batches, description=f"render[{backend.name}]", total=len(batches))
+    for batch in progress:
+        pieces = _synthesize(backend, batch, batch_size)
+        for job, chunks in zip(dict.fromkeys(j for j, _, _ in batch), pieces):
+            job.pieces.extend(chunks)
+            if len(job.pieces) == len(job.chunks):
+                audio = crossfade_concat(job.pieces, backend.sample_rate) if job.pieces \
+                    else np.zeros(0, np.float32)
+                sf.write(job.out, audio, backend.sample_rate)
+                _mark(paths, job, backend.name)
+                finished += 1
+                if finished % CHECKPOINT_EVERY == 0:
+                    write_lines(paths, lines)  # progress survives an interrupted run
+    for j in jobs:
+        if j.chunks is None:
+            _mark(paths, j, backend.name)
     write_lines(paths, lines)
     _link_by_line(paths, lines)
-    note(paths, f"render[{backend.name}]: {synthesized} lines synthesized, "
-         f"{len(missing) - synthesized} from cache, {len(lines) - len(missing)} untouched")
+    note(paths, f"render[{backend.name}]: {len(todo)} lines synthesized in {len(batches)} calls "
+         f"(batch {batch_size}), {len(missing) - len(todo)} from cache, "
+         f"{len(lines) - len(missing)} untouched")
     return paths.audio
+
+
+@dataclass(eq=False)
+class _Job:
+    line: object
+    voice: str
+    params: dict
+    out: Path
+    chunks: list[str] | None  # None = already cached
+    pieces: list[np.ndarray] = field(default_factory=list)
+
+
+def _batches(groups: dict[tuple, list[_Job]], batch_size: int):
+    """Yield lists of (job, chunk text) no longer than batch_size, one voice each.
+
+    Within a voice, chunks are ordered by length so a batch finishes together:
+    batched generation runs until its longest sequence stops. Multi-chunk
+    lines keep their chunks in order; a line's chunks may span batches.
+    """
+    for jobs in groups.values():
+        items = [(j, i, c) for j in jobs for i, c in enumerate(j.chunks)]
+        items.sort(key=lambda it: (len(it[2]), it[0].line.id, it[1]))
+        for k in range(0, len(items), batch_size):
+            yield items[k:k + batch_size]
+
+
+def _synthesize(backend, batch, batch_size: int) -> list[list[np.ndarray]]:
+    """Render one batch; returns, per job in the batch, its new pieces in chunk order."""
+    first = batch[0][0]
+    voice, lang, params = first.voice, first.line.lang, first.params
+    texts = [c for _, _, c in batch]
+    if batch_size > 1 and len(texts) > 1:
+        audios = backend.synthesize_batch(texts, voice, lang=lang, **params)
+    else:
+        audios = [backend.synthesize(c, voice, lang=lang, **params) for c in texts]
+    got: dict[int, list] = {}
+    order: list[_Job] = []
+    for (j, i, _), a in zip(batch, audios):
+        if id(j) not in got:
+            order.append(j)
+        got.setdefault(id(j), []).append((i, a))
+    return [[a for _, a in sorted(got[id(j)], key=lambda t: t[0])] for j in order]
+
+
+def _mark(paths: BookPaths, job: _Job, backend_name: str) -> None:
+    ln = job.line
+    ln.audio = str(job.out.relative_to(paths.work))
+    ln.backend = backend_name
+    ln.error_rate = None  # verify must look at the new audio
 
 
 def _link_by_line(paths: BookPaths, lines) -> None:

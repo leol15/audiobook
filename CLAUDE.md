@@ -45,7 +45,7 @@ uv run ab fix books/<slug> <line-id> --speaker NAME   # correct + lock + queue r
 uv run ab voices-design books/<slug>                  # Qwen3-TTS VoiceDesign clips from cast descriptions
 ```
 
-Long renders (Qwen3-TTS is ~0.4x realtime) must be launched detached, or they
+Long renders (Qwen3-TTS is a few x realtime with batching, 0.4x without) must be launched detached, or they
 die with the Claude session:
 `setsid nohup bash -c "cd ... && uv run ab run books/x > log 2>&1" < /dev/null &`
 Render checkpoints `04-lines.jsonl` every 10 lines, so an interrupted run
@@ -73,7 +73,9 @@ books/<slug>/     source.txt|md, book.yaml, cast.yaml, overrides.yaml, voices/, 
 tests/            no models, no Ollama: use the tone backend and ffmpeg
 ```
 
-Conventions: `write_lines()` also regenerates `04-script.md`; render sets
+Conventions: `write_lines()` also regenerates `04-script.md`; render groups
+pending lines by voice and sends `tts.batch` at a time to backends that have
+`synthesize_batch` (qwen3tts worker protocol `kind: batch`); render sets
 `line.backend` and clears `error_rate`; verify flags only apply to lines whose
 current audio was checked; voice maps in `book.yaml` are per backend
 (`voices: {kokoro: {...}, qwen3tts: {...}}`) and a value that is a file path
@@ -115,10 +117,12 @@ compares toneless pinyin (whisper emits traditional script and homophones).
 Scale (whole-book) track: (a) `num_ctx` fix, (b) incremental cast merge +
 main-cast cap + per-chapter cast in attribute prompts, (c) chapter-granular
 artifacts for attribute/render/verify/build so only changed chapters re-run
-and chapters can be listened to as they finish, (d) batched TTS in the Qwen
-worker and batched whisper in verify, (e) time-based render checkpoints.
+and chapters can be listened to as they finish, (d) batched whisper in verify
+(batched TTS is done), (e) time-based render checkpoints.
 
-Speed track for Qwen3-TTS: batching, flash-attn, 0.6B model, or vLLM serving.
+Speed track for Qwen3-TTS: batching is done (see DESIGN "Qwen3-TTS
+throughput"; `tts.batch`); the decode loop is launch-bound, so the remaining
+levers are CUDA graphs on the talker step or vLLM serving, not model size.
 
 Backlog from DESIGN.md: emotion/style tags, EPUB ingest, mixed-language
 books, review UI.
