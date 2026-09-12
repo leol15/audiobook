@@ -61,6 +61,15 @@ A `.txt` next to the wav with its transcript improves cloning. Params under
 `tts.params`: `size` (`1.7B` default, `0.6B` for speed), `instruct` (style
 text for presets, e.g. `"calm, low voice"`), `seed`.
 
+To measure throughput on your own machine (x realtime, GPU utilization,
+peak VRAM) and score the result with the verify metric:
+
+```bash
+cd backends/qwen3tts && .venv/bin/python bench.py --lines ../../books/small-chinese/work/04-lines.jsonl \
+    --ref ../../books/small-chinese/voices/narrator.wav --batch 1 --out /tmp/bench && cd ../..
+uv run python backends/qwen3tts/bench_verify.py /tmp/bench
+```
+
 ## Voice design (Qwen3-TTS part two)
 
 Turn each cast description into a reference clip, so a Chinese book is not

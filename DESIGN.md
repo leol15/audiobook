@@ -206,6 +206,27 @@ Rules:
   translates cast roles to backend voice ids so swapping backends means
   editing one map, not the cast.
 
+### Qwen3-TTS throughput
+
+Measured with `backends/qwen3tts/bench.py` (run in that venv): the first 20
+narrator lines of `books/small-chinese` (297 characters, ~70 s of audio),
+cloned from the designed narrator clip, timed after a warm-up call, with
+`nvidia-smi` utilization sampled while generating. `bench_verify.py` (main
+venv) scores the same wavs with the verify stage's pinyin metric so a speedup
+cannot hide a quality regression.
+
+Baseline, 2026-09-12, RTX 5070 Ti, torch 2.11 cu128, `qwen-tts` 12Hz 1.7B
+Base, `sdpa` attention, one line per call (what the worker did until now):
+
+| Config | x realtime | GPU busy | peak VRAM |
+|---|---|---|---|
+| 1.7B, sdpa, batch 1 | 0.43 | 16 % | 5.0 GB |
+
+GPU busy at 16 % says the decoder loop is launch-bound: each codec frame costs
+a fixed amount of Python and kernel-launch time, and the card idles between
+launches. That points at batching (amortize the per-step cost over many
+lines) rather than at a smaller model or faster attention kernels.
+
 ### 6. verify
 
 Autoregressive TTS skips sentences, repeats phrases, and invents words, and
