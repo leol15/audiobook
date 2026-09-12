@@ -35,6 +35,8 @@ def _run(paths: BookPaths, cfg: BookConfig, backend, force: bool):
     voices = cfg.voice_map(cfg.tts.backend)
     for ln in track(missing, description=f"render[{backend.name}]"):
         voice = resolve_voice(voices, ln.speaker)
+        if (paths.root / voice).is_file():
+            voice = str((paths.root / voice).resolve())  # reference clip, not a preset id
         params = {**cfg.tts.params, "seed": ln.attempts}
         key = cache.render_key(backend.name, voice, params, ln.text)
         out = paths.audio / f"{key}.wav"

@@ -41,6 +41,8 @@ class BookConfig(BaseModel):
     #   voices: {narrator: bm_george}                     # applies to any backend
     #   voices: {kokoro: {narrator: bm_george}, chatterbox: {narrator: default}}
     voices: dict[str, str | dict[str, str]] = Field(default_factory=dict)
+    # Used by `ab voices-design` for the narrator (cast members use cast.yaml descriptions).
+    narrator_description: str | None = None
 
     def voice_map(self, backend: str) -> dict[str, str]:
         nested = {k: v for k, v in self.voices.items() if isinstance(v, dict)}
@@ -96,6 +98,7 @@ class BookPaths:
         self.lines = self.work / "lines.jsonl"
         self.audio = self.work / "audio"
         self.verify = self.work / "verify.jsonl"
+        self.voices_dir = root / "voices"
 
     @property
     def source(self) -> Path:

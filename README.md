@@ -60,3 +60,22 @@ whisper's script and homophone choices do not count as errors.
 A `.txt` next to the wav with its transcript improves cloning. Params under
 `tts.params`: `size` (`1.7B` default, `0.6B` for speed), `instruct` (style
 text for presets, e.g. `"calm, low voice"`), `seed`.
+
+## Voice design (Qwen3-TTS part two)
+
+Turn each cast description into a reference clip, so a Chinese book is not
+limited to the five Mandarin presets:
+
+```bash
+uv run ab voices-design books/small-chinese   # one clip per role -> books/small-chinese/voices/
+uv run ab run books/small-chinese --tts qwen3tts --skip cast
+```
+
+The command reads `cast.yaml` descriptions (and `narrator_description` from
+`book.yaml`, with a sensible default), asks the VoiceDesign model to speak a
+short passage of that character's own lines, and saves `voices/<role>.wav`
+plus a `.txt` transcript. It then writes `voices.qwen3tts` in `book.yaml` to
+point at those clips; rendering clones them with the Base model. Existing
+clips are kept unless `--force`. Edit a description in `cast.yaml` and rerun
+with `--force` to redesign one voice; delete a clip you dislike and rerun to
+regenerate just that one.

@@ -28,3 +28,9 @@ class Qwen3TTSBackend(SubprocessBackend):
 
     def voices(self) -> list[str]:
         return PRESETS + ["<path to reference wav>"]
+
+    def design(self, text: str, *, lang: str, instruct: str, out: str) -> str:
+        """Create a reference clip for a voice described in words (VoiceDesign model)."""
+        self.request({"kind": "design", "text": text, "lang": lang, "instruct": instruct,
+                      "out": out, "params": dict(self.params)})
+        return out

@@ -94,3 +94,17 @@ def llm_check():
 
     o = Ollama()
     print(f"{o.url}: {o.ping()}")
+
+
+@app.command("voices-design")
+def voices_design(
+    book: Path = typer.Argument(..., help="Book directory"),
+    backend: str = typer.Option("qwen3tts", help="Backend with a voice-design model"),
+    force: bool = typer.Option(False, help="Regenerate clips that already exist"),
+):
+    """Create one reference clip per role from cast descriptions (Qwen3-TTS VoiceDesign)."""
+    from ab.stages import voices
+
+    paths = _book(book)
+    out = voices.run(paths, paths.load_config(), force=force, backend_name=backend)
+    print(f"[green]voices-design[/] -> {out}")

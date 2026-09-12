@@ -2,6 +2,7 @@
 
 Protocol is the same as backends/chatterbox/worker.py:
   Request:  {"text", "voice", "lang": "en"|"zh", "out": wav path, "params": {...}}
+            or {"kind": "design", "text", "lang", "instruct", "out"} -> VoiceDesign model
   Response: {"ok": true, "path", "sr"} | {"ok": false, "error"}
   Hello:    {"ready": true, "sr", "device"} after the first model loads.
 
@@ -80,7 +81,15 @@ def main() -> None:
             voice = req.get("voice", "Vivian")
             gen = {"max_new_tokens": int(p.get("max_new_tokens", 2048))}
             with torch.inference_mode():
-                if voice in _PRESETS:
+                if req.get("kind") == "design":
+                    # VoiceDesign exists only at 1.7B.
+                    saved, models.size = models.size, "1.7B"
+                    try:
+                        wavs, sr = models.get("VoiceDesign").generate_voice_design(
+                            text=req["text"], language=lang, instruct=req["instruct"], **gen)
+                    finally:
+                        models.size = saved
+                elif voice in _PRESETS:
                     wavs, sr = models.get("CustomVoice").generate_custom_voice(
                         text=req["text"], language=lang, speaker=voice,
                         instruct=str(p.get("instruct", "")), **gen)

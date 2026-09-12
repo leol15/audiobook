@@ -72,17 +72,21 @@ class SubprocessBackend:
     def voices(self) -> list[str]:
         return ["default", "<path to reference wav>"]
 
-    def synthesize(self, text: str, voice: str, *, lang: str, **params) -> np.ndarray:
+    def request(self, req: dict) -> dict:
+        """Send one request dict to the worker and return its response."""
         self._start()
         assert self._proc and self._proc.stdin
-        out = self._tmp / "chunk.wav"
-        req = {"text": text, "voice": voice, "lang": lang, "out": str(out),
-               "params": {**self.params, **params}}
         self._proc.stdin.write(json.dumps(req, ensure_ascii=False) + "\n")
         self._proc.stdin.flush()
         res = self._read()
         if not res.get("ok"):
             raise RuntimeError(f"worker error: {res.get('error')}")
+        return res
+
+    def synthesize(self, text: str, voice: str, *, lang: str, **params) -> np.ndarray:
+        out = self._tmp / "chunk.wav"
+        res = self.request({"text": text, "voice": voice, "lang": lang, "out": str(out),
+                            "params": {**self.params, **params}})
         audio, sr = sf.read(res["path"], dtype="float32")
         if sr != self.sample_rate:
             raise RuntimeError(f"worker sample rate {sr} != {self.sample_rate}")

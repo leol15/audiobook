@@ -306,12 +306,17 @@ unchanged. `ab run --force attribute` invalidates from that stage onward.
    it to A/B a chapter between backends with a measured error rate.
 4. **Qwen3-TTS, part one.** Clone/preset backend behind the subprocess
    protocol, A/B against Kokoro on the Chinese book with verify on.
-5. **Qwen3-TTS, part two: voice design.** An `ab voices-design` command
-   turns each cast description into a ten-second reference clip with the
-   VoiceDesign model, saved under the book's `voices/` directory. Rendering
-   then clones that clip with the Base model so a character sounds the same
-   across the whole book. This removes the eight-voice cap on Mandarin
-   without recording anything.
+5. **Qwen3-TTS, part two: voice design.** `ab voices-design` turns each cast
+   description into a reference clip with the VoiceDesign model, saved under
+   the book's `voices/` directory with a transcript. Rendering then clones
+   that clip with the Base model so a character sounds the same across the
+   whole book. This removes the voice-count cap on Mandarin without
+   recording anything. Design choices: the sample text is the character's
+   own lines from `lines.jsonl` (so the clip is heard saying in-character
+   words), the map is written into `book.yaml` so it is inspectable and
+   editable, and existing clips are never overwritten without `--force`, so
+   a voice you like survives re-runs. The cast description is the design
+   prompt, which makes `cast.yaml` the single place to steer a voice.
 6. Later, if wanted: emotion/style tags, EPUB ingest, per-line language
    switching for mixed books, a small review web UI for fixing attributions
    while listening.
