@@ -28,6 +28,7 @@ kokoro = [
 ]
 verify = [
     { name = "faster-whisper" },
+    { name = "pypinyin" },
 ]
 
 [package.metadata]
@@ -38,6 +39,7 @@ requires-dist = [
     { name = "misaki", extras = ["en", "zh"], marker = "extra == 'kokoro'", specifier = ">=0.9" },
     { name = "numpy", specifier = ">=1.26" },
     { name = "pydantic", specifier = ">=2.7" },
+    { name = "pypinyin", marker = "extra == 'verify'", specifier = ">=0.50" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
     { name = "pyyaml", specifier = ">=6" },
     { name = "rich", specifier = ">=13" },

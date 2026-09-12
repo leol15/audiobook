@@ -55,6 +55,8 @@ uv run ab build  books/small-chinese                  # -> out/<title>.qwen3tts-
 
 Voice ids are preset names (`Vivian`, `Serena`, `Uncle_Fu`, `Dylan`, `Eric`
 for Mandarin; `Ryan`, `Aiden` for English) or a path to a reference wav.
+Expect roughly 0.4x realtime; Chinese verification compares pinyin, so
+whisper's script and homophone choices do not count as errors.
 A `.txt` next to the wav with its transcript improves cloning. Params under
 `tts.params`: `size` (`1.7B` default, `0.6B` for speed), `instruct` (style
 text for presets, e.g. `"calm, low voice"`), `seed`.

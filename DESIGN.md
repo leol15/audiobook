@@ -215,20 +215,32 @@ off by default and enabled per book; it is not needed with Kokoro.
 - Transcribe every rendered utterance with faster-whisper (`small.en` for
   English, multilingual `small` with `language="zh"` for Chinese; GPU,
   batched; adds a few minutes per book).
-- Compute word error rate against the normalized source text for English,
-  character error rate for Chinese. Chinese comparison converts both sides to
-  simplified characters and strips punctuation first, since whisper's output
-  script and punctuation vary.
+- Compute word error rate against the normalized source text for English.
+  For Chinese, compare toneless pinyin syllables rather than characters:
+  whisper freely emits traditional script and homophones (林峰 for 林风,
+  蝴蝶节 for 蝴蝶结), none of which are TTS errors. Measured on the Chinese
+  book, the character metric reported 0.109 mean error and flagged 9 lines
+  for Qwen3-TTS; the phonetic metric on the same audio reported 0.023 and
+  flagged none. The remaining weakness is whisper `small` itself on Mandarin;
+  `verify.whisper_model: large-v3-turbo` is the upgrade if false positives
+  persist.
 - Utterances above a threshold (start at 0.15) are re-rendered with a new
   seed, up to 3 attempts. Still-failing lines go to `verify.review.txt`.
   Short lines tolerate one edit regardless of rate: a single misheard word on
   a three-word line is whisper's error more often than the TTS model's.
   Measured on the sample book:
 
-  | Backend | Mean word error | Lines re-rendered | Still bad after 3 tries |
-  |---|---|---|---|
-  | Kokoro-82M | 0.037 | 0 | 0 |
-  | Chatterbox Multilingual (default voice) | 0.200 | 6 | 3 |
+  | Book | Backend | Mean error | Lines re-rendered | Still bad after 3 tries |
+  |---|---|---|---|---|
+  | English sample | Kokoro-82M | 0.037 (WER) | 0 | 0 |
+  | English sample | Chatterbox Multilingual (default voice) | 0.200 (WER) | 6 | 3 |
+  | Chinese sample | Kokoro-82M | 0.053 (pinyin) | 1 | 2 |
+  | Chinese sample | Qwen3-TTS 1.7B CustomVoice | 0.023 (pinyin) | 0 | 0 |
+
+  On Mandarin the ranking flips: Qwen3-TTS is both more accurate and, to the
+  ear, far more natural than Kokoro's Mandarin voices. It costs speed: about
+  0.4x realtime on this GPU without flash-attention (Kokoro is ~100x), so a
+  six-minute chapter takes about fifteen minutes to render.
 
   Chatterbox's failures were hallucinations after short lines ("This was
   invitation enough." became a sentence and a half of invented speech). That

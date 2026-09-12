@@ -17,7 +17,7 @@ dependencies = [
 kokoro = ["kokoro>=0.9", "misaki[en,zh]>=0.9", "torch>=2.7"]
 # chatterbox-tts pins torch==2.6 (no Blackwell support); it runs in its own venv
 # via the subprocess backend (milestone 4). See DESIGN.md.
-verify = ["faster-whisper>=1.1"]
+verify = ["faster-whisper>=1.1", "pypinyin>=0.50"]
 dev = ["pytest>=8", "ruff>=0.5"]
 
 [project.scripts]

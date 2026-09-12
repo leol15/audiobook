@@ -101,7 +101,18 @@ def _tokens(s: str, lang: str) -> list[str]:
     s = unicodedata.normalize("NFKC", s).lower()
     s = re.sub(r"[^\w\s]", "", s)
     if lang == "zh":
-        return [c for c in s if not c.isspace()]
+        # Compare pronunciation, not characters: whisper freely emits
+        # traditional script and homophones (林峰 for 林风), which are not
+        # TTS errors. Toneless pinyin per character; non-CJK runs kept as words.
+        from pypinyin import Style, lazy_pinyin
+
+        out: list[str] = []
+        for tok in re.findall(r"[\u4e00-\u9fff]|[^\u4e00-\u9fff\s]+", s):
+            if re.match(r"[\u4e00-\u9fff]", tok):
+                out.extend(lazy_pinyin(tok, style=Style.NORMAL))
+            else:
+                out.append(tok)
+        return out
     return s.split()
 
 
