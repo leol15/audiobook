@@ -139,7 +139,9 @@ Scale (whole-book) track: (a) `num_ctx` fix (done), (b) incremental cast
 merge + main-cast cap + per-chapter cast in attribute prompts (done), (c)
 chapter-granular artifacts for attribute/render/verify/build (done; render
 checkpoints are time-based, every 60 s), (d) batched whisper in verify
-(batched TTS is done).
+(done, `verify.batch`, ~2x on the Chinese chapter). The track's remaining
+unknown is a real 30-chapter run: nothing above has been exercised beyond
+the two small books.
 
 Speed track for Qwen3-TTS: batching is done (see DESIGN "Qwen3-TTS
 throughput"; `tts.batch`); the decode loop is launch-bound, so the remaining

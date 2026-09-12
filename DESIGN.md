@@ -432,8 +432,15 @@ the audio sounds fluent while doing it. Catch it mechanically. The stage is
 off by default and enabled per book; it is not needed with Kokoro.
 
 - Transcribe every rendered utterance with faster-whisper (`small.en` for
-  English, multilingual `small` with `language="zh"` for Chinese; GPU,
-  batched; adds a few minutes per book).
+  English, multilingual `small` with `language="zh"` for Chinese; GPU).
+  Batched: `verify.batch` lines (default 16) are decoded to 16 kHz, laid end
+  to end with a 0.5 s gap, and sent as one `BatchedInferencePipeline` call
+  with one `clip_timestamps` entry per line, so the encoder and decoder run
+  on a batch; each returned segment starts at its clip's offset, which maps
+  it back to its line. Lines over 28 s (whisper's window is 30 s) are
+  transcribed alone. Measured on the 188-line Chinese chapter, `small`,
+  including the model load: 20.6 s batched vs 38.7 s one file at a time,
+  mean pinyin error 0.055 vs 0.057, nothing flagged either way.
 - Compute word error rate against the normalized source text for English.
   For Chinese, compare toneless pinyin syllables rather than characters:
   whisper freely emits traditional script and homophones (林峰 for 林风,

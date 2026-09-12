@@ -48,6 +48,9 @@ class VerifyConfig(BaseModel):
     threshold: float = 0.15
     max_attempts: int = 3
     whisper_model: str | None = None  # default chosen by language
+    # Lines transcribed per whisper call (faster-whisper's batched pipeline);
+    # 1 = one file per call, the old behaviour.
+    batch: int = 16
 
 
 class BuildConfig(BaseModel):

@@ -7,14 +7,22 @@ Kokoro rarely needs it.
 Chapter-granular: 06-verify/cNNN.jsonl is stamped with the chapter's render
 file, so only chapters whose audio changed are revisited, and within a chapter
 only lines whose current audio has no result are transcribed.
+
+Batched: `verify.batch` lines are decoded to 16 kHz, laid end to end with a
+gap, and sent as one call to faster-whisper's BatchedInferencePipeline with
+one clip per line, so the encoder and decoder run on a batch instead of a
+file at a time. Segments come back with the clip's start time, which maps
+them to their line. A line longer than whisper's 30 s window is transcribed
+alone the old way (the batched pipeline would truncate it).
 """
 
 from __future__ import annotations
 
+import bisect
 import re
 import unicodedata
 
-import soundfile as sf
+import numpy as np
 from rich.progress import track
 
 from ab import cache
@@ -68,17 +76,20 @@ def run(paths: BookPaths, cfg: BookConfig, force: bool = False, chapters: set[in
                     and (ln.id not in results or results[ln.id].audio != state[ln.id].audio)]
             if todo and model is None:
                 model = _load(model_name)
-            for ln in track(todo, description=f"verify[{model_name}] c{ci:03d} pass {attempt + 1}"):
-                st = state[ln.id]
-                res = _check(model, paths, ln.text, st.audio, cfg)
-                res.id, res.audio = ln.id, st.audio
-                results[ln.id] = res
-                checked += 1
-                if not res.ok and st.attempts + 1 < cfg.verify.max_attempts:
-                    # Drop the audio; render will regenerate with a new seed.
-                    st.audio, st.attempts = None, st.attempts + 1
-                    failed_chapters.add(ci)
-                    n_failed += 1
+            batch = max(1, cfg.verify.batch)
+            groups = [todo[k:k + batch] for k in range(0, len(todo), batch)]
+            for group in track(groups, description=f"verify[{model_name}] c{ci:03d} pass {attempt + 1}"):
+                items = [(ln.text, state[ln.id].audio) for ln in group]
+                for ln, res in zip(group, _check_batch(model, paths, items, cfg)):
+                    st = state[ln.id]
+                    res.id, res.audio = ln.id, st.audio
+                    results[ln.id] = res
+                    checked += 1
+                    if not res.ok and st.attempts + 1 < cfg.verify.max_attempts:
+                        # Drop the audio; render will regenerate with a new seed.
+                        st.audio, st.attempts = None, st.attempts + 1
+                        failed_chapters.add(ci)
+                        n_failed += 1
             write_verify(paths, ci, {k: v for k, v in results.items() if k in state})
             if ci in failed_chapters:
                 for ln in lines:
@@ -116,26 +127,75 @@ def _current_results(paths: BookPaths, chapter: int) -> dict[str, VerifyResult]:
             if state.get(k) and state[k].audio == v.audio}
 
 
+WHISPER_SR = 16000
+MAX_CLIP_SECONDS = 28.0  # whisper window is 30 s; longer lines go one at a time
+GAP_SECONDS = 0.5
+
+
 def _load(model_name: str):
     try:
-        from faster_whisper import WhisperModel
+        from faster_whisper import BatchedInferencePipeline, WhisperModel
     except ImportError as e:
         raise SystemExit("verify needs faster-whisper: uv sync --extra verify") from e
-    return WhisperModel(model_name, device="cuda", compute_type="float16")
+    model = WhisperModel(model_name, device="cuda", compute_type="float16")
+    return model, BatchedInferencePipeline(model)
 
 
-def _check(model, paths: BookPaths, text: str, audio: str, cfg: BookConfig) -> VerifyResult:
-    path = paths.work / audio
-    segments, _ = model.transcribe(str(path), language=cfg.language, beam_size=1,
-                                   condition_on_previous_text=False)
-    transcript = "".join(s.text for s in segments) if cfg.language == "zh" else \
-        " ".join(s.text.strip() for s in segments)
-    rate, edits = error_rate(text, transcript, cfg.language, with_edits=True)
-    # A single misheard word on a 3-word line is a 33% "error"; tolerate one
-    # edit on short lines so whisper's own mistakes do not trigger re-renders.
-    ok = rate <= cfg.verify.threshold or edits <= 1
-    return VerifyResult(id="", transcript=transcript, error_rate=rate, edits=edits,
-                        duration=sf.info(path).duration, ok=ok)
+def _check_batch(models, paths: BookPaths, items: list[tuple[str, str]], cfg: BookConfig) -> list[VerifyResult]:
+    """Transcribe several lines in one batched call; returns one result per item, in order."""
+    from faster_whisper.audio import decode_audio
+
+    model, pipeline = models
+    audios = [decode_audio(str(paths.work / a), sampling_rate=WHISPER_SR) for _, a in items]
+    durations = [len(a) / WHISPER_SR for a in audios]
+    transcripts: list[str | None] = [None] * len(items)
+    short = [i for i, d in enumerate(durations) if d <= MAX_CLIP_SECONDS]
+    if len(short) > 1 and cfg.verify.batch > 1:
+        joined, clips = concat_clips([audios[i] for i in short], WHISPER_SR)
+        segments, _ = pipeline.transcribe(joined, language=cfg.language, beam_size=1,
+                                          clip_timestamps=clips, batch_size=len(clips),
+                                          condition_on_previous_text=False, vad_filter=False)
+        for i, text in zip(short, segments_to_clips(list(segments), clips, cfg.language)):
+            transcripts[i] = text
+    for i in [j for j in range(len(items)) if transcripts[j] is None]:  # long lines, or batch 1
+        segments, _ = model.transcribe(audios[i], language=cfg.language, beam_size=1,
+                                       condition_on_previous_text=False)
+        transcripts[i] = _join(list(segments), cfg.language)
+    out = []
+    for (text, _), transcript, dur in zip(items, transcripts, durations):
+        rate, edits = error_rate(text, transcript or "", cfg.language, with_edits=True)
+        # A single misheard word on a 3-word line is a 33% "error"; tolerate one
+        # edit on short lines so whisper's own mistakes do not trigger re-renders.
+        ok = rate <= cfg.verify.threshold or edits <= 1
+        out.append(VerifyResult(id="", transcript=transcript or "", error_rate=rate, edits=edits,
+                                duration=dur, ok=ok))
+    return out
+
+
+def concat_clips(audios: list[np.ndarray], sr: int) -> tuple[np.ndarray, list[dict]]:
+    """Lay clips end to end with a gap; returns the array and [{start, end}] in seconds."""
+    gap = np.zeros(int(GAP_SECONDS * sr), np.float32)
+    parts, clips, t = [], [], 0.0
+    for a in audios:
+        a = a.astype(np.float32)
+        parts += [a, gap]
+        clips.append({"start": round(t, 3), "end": round(t + len(a) / sr, 3)})
+        t += (len(a) + len(gap)) / sr
+    return np.concatenate(parts) if parts else np.zeros(0, np.float32), clips
+
+
+def segments_to_clips(segments, clips: list[dict], lang: str) -> list[str]:
+    """Assign each segment to the clip it starts in (segments carry the clip's offset)."""
+    starts = [c["start"] for c in clips]
+    per_clip: list[list] = [[] for _ in clips]
+    for seg in segments:
+        i = max(0, bisect.bisect_right(starts, seg.start + 1e-3) - 1)
+        per_clip[i].append(seg)
+    return [_join(segs, lang) for segs in per_clip]
+
+
+def _join(segments, lang: str) -> str:
+    return "".join(s.text for s in segments) if lang == "zh" else " ".join(s.text.strip() for s in segments)
 
 
 def error_rate(reference: str, hypothesis: str, lang: str, with_edits: bool = False):

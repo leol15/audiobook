@@ -92,7 +92,8 @@ line, so a batch of 32 runs several times faster than realtime where one line
 at a time ran at 0.4x. Lower it if you hit CUDA out-of-memory, raise it if
 VRAM allows (each line in a batch costs well under 100 MB). Chinese
 verification compares pinyin, so whisper's script and homophone choices do
-not count as errors.
+not count as errors. Verification is batched too (`verify.batch`, default
+16 lines per whisper call; set 1 for one file at a time).
 A `.txt` next to the wav with its transcript improves cloning. Params under
 `tts.params`: `size` (`1.7B` default, `0.6B` for speed), `instruct` (style
 text for presets, e.g. `"calm, low voice"`), `seed`.
