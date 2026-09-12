@@ -296,7 +296,9 @@ audiobook/
   pyproject.toml            uv project, python 3.12, extras per TTS backend
   src/ab/
     cli.py                  typer: ab ingest|normalize|cast|attribute|render|verify|build|run
-    stages/                 one module per stage, pure function: (paths, config) -> artifact
+    stages/                 s01_ingest.py ... s07_build.py, numbered in execution order;
+                            each: run(paths, cfg, force) -> artifact, inputs(paths, cfg) -> hashes
+    voices.py               `ab voices-design` (a tool, not a pipeline stage)
     report.py               script.md, status table, REPORT.md, fix-line
     log.py                  console + work/run.log
     tts/                    base.py (protocol), kokoro.py, chatterbox.py, subprocess.py
