@@ -153,6 +153,8 @@ Speed track for Qwen3-TTS: batching is done (see DESIGN "Qwen3-TTS
 throughput"; `tts.batch`); the decode loop is launch-bound, so the remaining
 levers are CUDA graphs on the talker step or vLLM serving, not model size.
 
+See SOP.md for the operator procedure.
+
 Backlog from DESIGN.md: emotion/style tags, EPUB ingest, mixed-language
 books, review UI.
 
