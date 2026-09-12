@@ -56,6 +56,7 @@ def test_script_fix_and_report(book, monkeypatch):
     render.run(book, cfg)
 
     assert book.script.exists() and "**narrator**" in book.script.read_text()
+    assert book.chapter_lines(0).exists() and book.chapter_render(1).exists()
     assert (book.audio_by_line / "c000p0000s00.wav").is_symlink()
 
     # fix: speaker must be in cast; re-add cast then fix a line.

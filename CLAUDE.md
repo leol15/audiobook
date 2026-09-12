@@ -10,7 +10,9 @@ Text/Markdown book → chaptered M4B with a narrator voice and a distinct voice
 per character. All models local and free. English and Mandarin, set per book.
 Seven resumable stages: ingest → normalize → cast → attribute → render →
 verify → build, each a module in `src/ab/stages/s0N_*.py` with
-`run(paths, cfg, force)` and, where cached, `inputs(paths, cfg)`.
+`run(paths, cfg, force)` and `inputs(paths, cfg)` (stages 1-2) or
+`run(paths, cfg, force, chapters)` and `chapter_states(paths, cfg)` (stages
+4-7, which are chapter-granular: one file + stamp per chapter).
 
 Core design rule: **the LLM labels spans by id and never emits text.** Do not
 add a stage that round-trips book text through a model.
@@ -60,6 +62,8 @@ src/ab/
   config.py       book.yaml + cast.yaml models; BookPaths = the numbered work/ layout
   models.py       Chapter, Line (the unit of rendering), VerifyResult
   cache.py        content hashes; .inputs stamps store named components for `ab status`
+  lines.py        per-chapter line files: 04-lines (attribution), 05-render (audio state),
+                  06-verify (results); read_chapter/read_lines merge them into Line
   text.py         quote canonicalization, per-language sentence splitting, chunking
   quotes.py       rule-based dialogue extraction + speech-tag attribution (no model)
   llm.py          Ollama client, JSON-schema output, logs every exchange to work/03-llm.jsonl
@@ -74,7 +78,12 @@ books/<slug>/     source.txt|md, book.yaml, cast.yaml, overrides.yaml, voices/, 
 tests/            no models, no Ollama: use the tone backend and ffmpeg
 ```
 
-Conventions: `write_lines()` also regenerates `04-script.md`; render groups
+Conventions: stages write their own per-chapter file (`write_attribution`,
+`write_render`, `write_verify`) and call `write_views()` at the end to
+regenerate `04-script.md`; render plans whole-book but stamps per chapter;
+verify results are valid only while their `audio` matches the render entry;
+`ab fix` drops the line's 05/06 entries so the chapter's render stamp goes
+stale by hash; render groups
 pending lines by voice and sends `tts.batch` at a time to backends that have
 `synthesize_batch` (qwen3tts worker protocol `kind: batch`); render sets
 `line.backend` and clears `error_rate`; verify flags only apply to lines whose
@@ -88,12 +97,16 @@ each other and build names the M4B after the backend.
 
 - `books/sample` — Pride and Prejudice excerpt, English, 5 Kokoro voices, cast
   discovered by LLM. One line hand-fixed and locked (c001p0004s00 → Mrs. Bennet).
+  Both books' `work/` were wiped and regenerated in the per-chapter layout on
+  2026-09-12 (no migration code exists for the old single-file layout).
 - `books/small-chinese` — a web-novel chapter ("058 ..."), Mandarin. `source.txt`
   is **untracked on purpose** (copyrighted; never `git add` it). Backend
   `qwen3tts` with six designed voices in `voices/` (gitignored, regenerable
   with `ab voices-design`). 188 lines; 4 lines are `unknown` (unnamed team
   members addressing 刀老大); 5 hoofbeat sound-effect quotes were fixed to
-  narrator. Latest render (batch 32): mean phonetic error 0.048, nothing flagged.
+  narrator. Latest full regeneration (2026-09-12, per-chapter layout, batch
+  32): render 215 s for 188 lines, verify mean phonetic error 0.052, nothing
+  flagged; whole run (attribute → build) about 6 minutes.
 
 Measured quality (see DESIGN.md table): Kokoro is best on English, Qwen3-TTS
 is best on Mandarin. Chatterbox hallucinates on short lines. Chinese verify
@@ -112,19 +125,21 @@ compares toneless pinyin (whisper emits traditional script and homophones).
    Ranking is only as good as the speech-tag rules: on Chinese few lines
    resolve, so mentions decide most of the order.
 3. `ab run` background jobs launched via the harness die with the session.
+   Render checkpoints per-chapter state every 60 s, so little is lost.
 4. `uv sync` in the main venv once removed `en-core-web-sm`; Kokoro English
    still worked. If English G2P breaks, that is the first suspect.
 5. Preset and designed Qwen3-TTS renders share an output filename
-   (`<title>.qwen3tts-1.7B.m4b`); the newer overwrites.
+   (`<title>.qwen3tts-1.7B.m4b` and the `<title>.qwen3tts-1.7B/` chapter
+   folder); the newer overwrites.
 6. `report._backend_name()` hardcodes registry→backend.name; keep in sync.
 
 ## Next tracks (agreed order)
 
-Scale (whole-book) track: (a) `num_ctx` fix (done), (b) incremental cast merge +
-main-cast cap + per-chapter cast in attribute prompts, (c) chapter-granular
-artifacts for attribute/render/verify/build so only changed chapters re-run
-and chapters can be listened to as they finish, (d) batched whisper in verify
-(batched TTS is done), (e) time-based render checkpoints.
+Scale (whole-book) track: (a) `num_ctx` fix (done), (b) incremental cast
+merge + main-cast cap + per-chapter cast in attribute prompts (done), (c)
+chapter-granular artifacts for attribute/render/verify/build (done; render
+checkpoints are time-based, every 60 s), (d) batched whisper in verify
+(batched TTS is done).
 
 Speed track for Qwen3-TTS: batching is done (see DESIGN "Qwen3-TTS
 throughput"; `tts.batch`); the decode loop is launch-bound, so the remaining

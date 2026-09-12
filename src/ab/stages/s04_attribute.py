@@ -4,21 +4,24 @@
    tags ("said X") against the cast.
 2. Unresolved quotes go to the LLM in windows, which returns speaker names for
    quote ids only. Text never round-trips through the model.
-3. Lines marked locked: true in an existing lines.jsonl are preserved.
+3. Lines marked locked: true in an existing chapter file are preserved.
+
+Chapter-granular: 04-lines/cNNN.jsonl is stamped with the chapter text, the
+language, and the cast's names and aliases, so editing one chapter (or the
+cast) re-runs only what depends on it.
 
 Without a cast.yaml the stage runs in narrator-only mode (milestone 1 behaviour).
 """
 
 from __future__ import annotations
 
-import json
-
 from rich.progress import track
 
 from ab import cache
 from ab.config import BookConfig, BookPaths, Cast
+from ab.lines import chapter_indexes, read_attribution, read_lines, write_attribution, write_views
 from ab.log import note
-from ab.models import ChapterList, Line
+from ab.models import Chapter, ChapterList, Line
 from ab.quotes import ParaSpans, extract
 
 _SCHEMA = {
@@ -65,58 +68,90 @@ WINDOW = 12   # max paragraphs per LLM call (fewer if the context budget fills f
 CONTEXT = 4   # preceding paragraphs shown for context
 
 
-def inputs(paths: BookPaths, cfg: BookConfig) -> dict:
-    return {"chapters_norm": cache.file_hash(paths.chapters_norm) if paths.chapters_norm.exists() else "",
-            "language": cfg.language, "cast": cache.content_hash(paths.load_cast().model_dump())}
+def cast_hash(cast: Cast) -> str:
+    """Names and aliases only: a description edit must not re-run attribution."""
+    return cache.content_hash({n: c.aliases for n, c in cast.characters.items()})
 
 
-def run(paths: BookPaths, cfg: BookConfig, force: bool = False):
-    cast = paths.load_cast()
-    inp = inputs(paths, cfg)
-    if not force and cache.is_fresh(paths.lines, inp):
-        return paths.lines
-    locked = {ln.id: ln for ln in read_lines(paths) if ln.locked} if paths.lines.exists() else {}
+def chapter_inputs(ch: Chapter, cfg: BookConfig, cast_key: str) -> dict:
+    return {"chapter": cache.content_hash(ch.title, ch.paragraphs), "language": cfg.language,
+            "cast": cast_key}
+
+
+def chapter_states(paths: BookPaths, cfg: BookConfig) -> list[tuple[int, list[str]]]:
+    """(chapter index, stale reasons) per chapter of the normalized book; [] = fresh."""
+    if not paths.chapters_norm.exists():
+        return []
     book = ChapterList.model_validate_json(paths.chapters_norm.read_text(encoding="utf-8"))
+    key = cast_hash(paths.load_cast())
+    return [(ch.index, cache.stale_reasons(paths.chapter_lines(ch.index), chapter_inputs(ch, cfg, key)))
+            for ch in book.chapters]
 
-    lines: list[Line] = []
-    stats = {"narration": 0, "rules": 0, "llm": 0, "unknown": 0}
+
+def run(paths: BookPaths, cfg: BookConfig, force: bool = False, chapters: set[int] | None = None):
+    cast = paths.load_cast()
+    key = cast_hash(cast)
+    book = ChapterList.model_validate_json(paths.chapters_norm.read_text(encoding="utf-8"))
+    todo = [ch for ch in book.chapters
+            if (chapters is None or ch.index in chapters)
+            and (force or not cache.is_fresh(paths.chapter_lines(ch.index), chapter_inputs(ch, cfg, key)))]
+    # A chapter file the source no longer has (book shrank) would otherwise linger.
+    for i in chapter_indexes(paths):
+        if i >= len(book.chapters):
+            paths.chapter_lines(i).unlink()
+            cache.stamp_path(paths.chapter_lines(i)).unlink(missing_ok=True)
+    if not todo:
+        return paths.lines_dir
+
+    stats = {"narration": 0, "rules": 0, "llm": 0, "unknown": 0, "locked": 0}
     llm = None
     if cast.characters:
         from ab.llm import Ollama
         llm = Ollama.from_config(cfg, log=paths.llm_log)
 
-    for ch in track(book.chapters, description="attribute"):
-        if not cast.characters:
-            paras = [ParaSpans(para=i, spans=[_narr(p)]) for i, p in enumerate(ch.paragraphs)]
-        else:
-            paras = extract(ch.paragraphs, cfg.language, cast.resolve)
-            _llm_fill(paras, cast, cfg.language, llm, stats, names=cast.names_for_chapter(ch.index))
-        for ps in paras:
-            for si, sp in enumerate(ps.spans):
-                if not _HAS_WORD.search(sp.text):
-                    continue  # punctuation-only span such as a quoted "……"
-                lid = f"c{ch.index:03d}p{ps.para:04d}s{si:02d}"
-                if lid in locked and locked[lid].text == sp.text:
-                    lines.append(locked[lid])
-                    continue
-                speaker = sp.speaker or "unknown"
-                if sp.kind == "narration":
-                    stats["narration"] += 1
-                elif sp.confidence >= 0.85:
-                    stats["rules"] += 1
-                lines.append(Line(id=lid, chapter=ch.index, para=ps.para, kind=sp.kind,
-                                  speaker=speaker, text=sp.text, lang=cfg.language,
-                                  confidence=sp.confidence))
-    write_lines(paths, lines)
-    _write_review(paths, lines)
-    cache.mark_fresh(paths.lines, inp)
+    for ch in track(todo, description="attribute"):
+        locked = {ln.id: ln for ln in read_attribution(paths, ch.index) if ln.locked}
+        lines = attribute_chapter(ch, cast, cfg, llm, stats, locked)
+        write_attribution(paths, ch.index, lines)
+        cache.mark_fresh(paths.chapter_lines(ch.index), chapter_inputs(ch, cfg, key))
+    all_lines = read_lines(paths)
+    write_views(paths, all_lines)
+    _write_review(paths, all_lines)
     if llm:
         llm.unload()
-    dialogue = sum(1 for ln in lines if ln.kind == "dialogue")
-    note(paths, f"attribute: {stats['narration']} narration, {dialogue} dialogue "
-         f"({stats['rules']} by rules, {stats['llm']} by LLM, {stats['unknown']} unknown, "
-         f"{len(locked)} locked)")
-    return paths.lines
+    dialogue = sum(1 for ln in all_lines if ln.kind == "dialogue")
+    note(paths, f"attribute: {len(todo)}/{len(book.chapters)} chapters run; {stats['narration']} "
+         f"narration, {dialogue} dialogue in book ({stats['rules']} by rules, {stats['llm']} by LLM, "
+         f"{stats['unknown']} unknown, {stats['locked']} locked in re-run chapters)")
+    return paths.lines_dir
+
+
+def attribute_chapter(ch: Chapter, cast: Cast, cfg: BookConfig, llm, stats: dict,
+                      locked: dict[str, Line]) -> list[Line]:
+    if not cast.characters:
+        paras = [ParaSpans(para=i, spans=[_narr(p)]) for i, p in enumerate(ch.paragraphs)]
+    else:
+        paras = extract(ch.paragraphs, cfg.language, cast.resolve)
+        _llm_fill(paras, cast, cfg.language, llm, stats, names=cast.names_for_chapter(ch.index))
+    lines: list[Line] = []
+    for ps in paras:
+        for si, sp in enumerate(ps.spans):
+            if not _HAS_WORD.search(sp.text):
+                continue  # punctuation-only span such as a quoted "……"
+            lid = f"c{ch.index:03d}p{ps.para:04d}s{si:02d}"
+            if lid in locked and locked[lid].text == sp.text:
+                lines.append(locked[lid])
+                stats["locked"] += 1
+                continue
+            speaker = sp.speaker or "unknown"
+            if sp.kind == "narration":
+                stats["narration"] += 1
+            elif sp.confidence >= 0.85:
+                stats["rules"] += 1
+            lines.append(Line(id=lid, chapter=ch.index, para=ps.para, kind=sp.kind,
+                              speaker=speaker, text=sp.text, lang=cfg.language,
+                              confidence=sp.confidence))
+    return lines
 
 
 def _narr(text: str):
@@ -198,18 +233,3 @@ def _write_review(paths: BookPaths, lines: list[Line]) -> None:
         fh.write("# Dialogue lines not resolved by rules. Fix with: ab fix <book> <id> --speaker NAME\n")
         for ln in low:
             fh.write(f"{ln.id}\t{ln.speaker}\t{ln.confidence:.2f}\t{ln.text[:100]}\n")
-
-
-def read_lines(paths: BookPaths) -> list[Line]:
-    with paths.lines.open(encoding="utf-8") as f:
-        return [Line.model_validate_json(l) for l in f if l.strip()]
-
-
-def write_lines(paths: BookPaths, lines: list[Line]) -> None:
-    from ab.report import write_script
-
-    paths.work.mkdir(parents=True, exist_ok=True)
-    with paths.lines.open("w", encoding="utf-8") as f:
-        for ln in lines:
-            f.write(json.dumps(ln.model_dump(), ensure_ascii=False) + "\n")
-    write_script(paths, lines)

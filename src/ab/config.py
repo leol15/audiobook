@@ -50,6 +50,12 @@ class VerifyConfig(BaseModel):
     whisper_model: str | None = None  # default chosen by language
 
 
+class BuildConfig(BaseModel):
+    # Per-chapter files written to out/<title>.<backend>/ as chapters become
+    # ready: "mp3", "m4b", or "none". The whole-book M4B needs every chapter.
+    chapter_format: Literal["mp3", "m4b", "none"] = "mp3"
+
+
 class BookConfig(BaseModel):
     title: str
     author: str = ""
@@ -76,6 +82,7 @@ class BookConfig(BaseModel):
         return {k: v for k, v in self.voices.items() if isinstance(v, str)}
     pauses: Pauses = Field(default_factory=Pauses)
     verify: VerifyConfig = Field(default_factory=VerifyConfig)
+    build: BuildConfig = Field(default_factory=BuildConfig)
     loudness_lufs: float = -18.0
 
 
@@ -129,17 +136,32 @@ class BookPaths:
         self.chapters_norm = w / "02-chapters.norm.json"
         self.llm_log = w / "03-llm.jsonl"          # cast + attribute exchanges
         self.cast_work = w / "03-cast"             # per-chapter discovery results (cache)
-        self.lines = w / "04-lines.jsonl"
-        self.script = w / "04-script.md"           # human-readable view of lines
+        # Stages 4-7 are chapter-granular: one file per chapter, each with its
+        # own .inputs stamp, so editing one chapter re-runs only that chapter.
+        self.lines_dir = w / "04-lines"            # cNNN.jsonl: attribution (speaker, text, locked)
+        self.script = w / "04-script.md"           # human-readable view of all lines
         self.attribute_review = w / "04-attribute.review.txt"
-        self.audio = w / "05-audio"
+        self.audio = w / "05-audio"                # content-addressed wavs shared by all chapters
         self.audio_by_line = w / "05-audio" / "by-line"
-        self.verify = w / "06-verify.jsonl"
+        self.render_dir = w / "05-render"          # cNNN.jsonl: audio path, backend, attempts per line
+        self.verify_dir = w / "06-verify"          # cNNN.jsonl: transcript and error rate per line
         self.verify_review = w / "06-verify.review.txt"
-        self.chapter_audio = w / "07-chapters"
+        self.chapter_audio = w / "07-chapters"     # cNNN.wav: one chapter with pauses
         self.ffmetadata = w / "07-ffmetadata.txt"
         self.run_log = w / "run.log"
         self.report = w / "REPORT.md"
+
+    def chapter_lines(self, i: int) -> Path:
+        return self.lines_dir / f"c{i:03d}.jsonl"
+
+    def chapter_render(self, i: int) -> Path:
+        return self.render_dir / f"c{i:03d}.jsonl"
+
+    def chapter_verify(self, i: int) -> Path:
+        return self.verify_dir / f"c{i:03d}.jsonl"
+
+    def chapter_wav(self, i: int) -> Path:
+        return self.chapter_audio / f"c{i:03d}.wav"
 
     @property
     def source(self) -> Path:

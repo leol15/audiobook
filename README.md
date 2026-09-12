@@ -141,12 +141,28 @@ uv run ab play books/x c000p0012s00 # path of that line's audio
 | `01-chapters.json` | ingest output |
 | `02-chapters.norm.json` | normalize output |
 | `03-llm.jsonl` | every prompt and raw response from cast and attribute |
-| `04-lines.jsonl` | the machine-readable script; `04-script.md` is the same as a screenplay with `(?)` `(!)` `[x]` `[lock]` markers; `04-attribute.review.txt` lists lines the rules could not resolve |
-| `05-audio/<hash>.wav` | one file per rendered line; `05-audio/by-line/<id>.wav` symlinks make a line easy to find |
-| `06-verify.jsonl` | transcripts and error rates; `06-verify.review.txt` lists lines still failing |
-| `07-chapters/`, `07-ffmetadata.txt` | build intermediates |
+| `03-cast/cNNN.json` | per-chapter character discovery (cache for `ab cast --force`) |
+| `04-lines/cNNN.jsonl` | the machine-readable script, one file per chapter; `04-script.md` is the whole book as a screenplay with `(?)` `(!)` `[x]` `[lock]` markers; `04-attribute.review.txt` lists lines the rules could not resolve |
+| `05-audio/<hash>.wav` | one file per rendered line, shared by all chapters and backends; `05-audio/by-line/<id>.wav` symlinks make a line easy to find |
+| `05-render/cNNN.jsonl` | per chapter: which audio file each line has, from which backend, and how many seeds were tried |
+| `06-verify/cNNN.jsonl` | per chapter: transcripts and error rates; `06-verify.review.txt` lists lines still failing |
+| `07-chapters/cNNN.wav`, `07-ffmetadata.txt` | build intermediates |
 | `run.log` | timestamped stage summaries and durations across runs |
 | `REPORT.md` | written at the end of every `ab run` |
 
 Each `*.inputs` stamp stores the named input hashes a stage was built from,
-which is how `ab status` can say "stale: cast changed".
+which is how `ab status` can say "stale: cast changed". Stages 4-7 are
+stamped per chapter, so editing one chapter's text or fixing one line re-runs
+only that chapter:
+
+```bash
+uv run ab status --chapters books/x           # attribute / render / verify / build per chapter
+uv run ab render books/x --chapters 3,7-9     # restrict any of attribute/render/verify/build
+uv run ab build books/x                       # per-chapter mp3s for every rendered chapter;
+                                              # the whole-book m4b once all chapters are ready
+```
+
+Outputs land in `out/<title>.<backend>.m4b` and, per chapter,
+`out/<title>.<backend>/cNNN <title>.mp3` (`build.chapter_format: mp3|m4b|none`
+in `book.yaml`). While a long render runs detached, `ab build` in another
+shell emits the chapters finished so far.

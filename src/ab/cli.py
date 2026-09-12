@@ -37,17 +37,37 @@ def _book(path: Path) -> BookPaths:
     return p
 
 
+_CHAPTER_STAGES = {"attribute", "render", "verify", "build"}
+
+
+def _chapters(spec: str | None) -> set[int] | None:
+    """'3', '0,4', '2-5' -> chapter indexes; None = all."""
+    if not spec:
+        return None
+    out: set[int] = set()
+    for part in spec.split(","):
+        a, _, b = part.strip().partition("-")
+        out.update(range(int(a), int(b or a) + 1))
+    return out
+
+
 def _make_cmd(name, fn):
     def cmd(
         book: Path = typer.Argument(..., help="Book directory"),
         force: bool = False,
         tts: str | None = typer.Option(None, help="Override tts.backend from book.yaml"),
+        chapters: str | None = typer.Option(None, help="Only these chapter indexes, e.g. 0,3 or 2-5"),
     ):
         paths = _book(book)
         cfg = paths.load_config()
         if tts:
             cfg.tts.backend = tts
-        out = fn(paths, cfg, force=force)
+        if name in _CHAPTER_STAGES:
+            out = fn(paths, cfg, force=force, chapters=_chapters(chapters))
+        elif chapters:
+            raise SystemExit(f"--chapters applies to {', '.join(sorted(_CHAPTER_STAGES))}")
+        else:
+            out = fn(paths, cfg, force=force)
         print(f"[green]{name}[/] -> {out}")
 
     cmd.__name__ = name
@@ -127,15 +147,31 @@ def voices_design(
 
 
 @app.command()
-def status(book: Path = typer.Argument(..., help="Book directory")):
+def status(
+    book: Path = typer.Argument(..., help="Book directory"),
+    chapters: bool = typer.Option(False, "--chapters", help="Per-chapter grid instead of the stage table"),
+):
     """Show each stage: fresh, stale (and why), or missing."""
     from rich.table import Table
 
-    from ab.report import stage_status
+    from ab.report import chapter_status, stage_status
 
     paths = _book(book)
     cfg = paths.load_config()
     color = {"fresh": "green", "stale": "yellow", "missing": "red"}
+    if chapters:
+        table = Table(title=f"{cfg.title} · chapters")
+        for col in ("#", "title", "lines", "attribute", "render", "verify", "build"):
+            table.add_column(col)
+        for r in chapter_status(paths, cfg):
+            cells = []
+            for st in ("attribute", "render", "verify", "build"):
+                c = color.get(r[st], "white")
+                d = f" ({r[st + '_detail']})" if r[st + "_detail"] else ""
+                cells.append(f"[{c}]{r[st]}[/]{d}")
+            table.add_row(str(r["chapter"]), r["title"][:40], str(r["lines"]), *cells)
+        print(table)
+        return
     table = Table(title=f"{cfg.title} · {cfg.language} · tts={cfg.tts.backend}")
     table.add_column("stage")
     table.add_column("state")

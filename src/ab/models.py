@@ -39,6 +39,20 @@ class Line(BaseModel):
     error_rate: float | None = None
 
 
+# Fields of Line that the attribute stage owns (04-lines/cNNN.jsonl).
+ATTRIBUTION_FIELDS = ("id", "chapter", "para", "kind", "speaker", "text", "lang", "style",
+                      "confidence", "locked")
+
+
+class RenderState(BaseModel):
+    """Render's per-line record (05-render/cNNN.jsonl). audio None = must (re)render."""
+
+    id: str
+    audio: str | None = None
+    backend: str | None = None
+    attempts: int = 0
+
+
 class VerifyResult(BaseModel):
     id: str
     transcript: str
@@ -46,3 +60,4 @@ class VerifyResult(BaseModel):
     edits: int = 0
     duration: float
     ok: bool
+    audio: str | None = None  # the file that was checked; stale once render replaces it

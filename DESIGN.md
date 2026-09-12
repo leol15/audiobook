@@ -94,14 +94,62 @@ larger models, so this property is what makes experimentation bearable.
 
 ```
 source.md
-  │  1. ingest      chapters.json        (chapter list, cleaned paragraphs)
-  │  2. normalize   chapters.norm.json   (numbers, abbreviations expanded)
-  │  3. cast        cast.yaml            (characters found, aliases merged; user maps voices)
-  │  4. attribute   lines.jsonl          (each utterance: text, speaker, chapter, para)
-  │  5. render      audio/<hash>.wav     (one file per utterance, via TTS backend)
-  │  6. verify      verify.jsonl         (whisper transcript diff; bad chunks re-rendered)
-  │  7. build       out/<book>.m4b       (pauses, loudness, chapters, cover, tags)
+  │  1. ingest      01-chapters.json         (chapter list, cleaned paragraphs)
+  │  2. normalize   02-chapters.norm.json    (numbers, abbreviations expanded)
+  │  3. cast        cast.yaml                (characters found, aliases merged; user maps voices)
+  │  4. attribute   04-lines/cNNN.jsonl      (per chapter: each utterance's speaker, text, lock)
+  │  5. render      05-audio/<hash>.wav      (one file per utterance, content-addressed)
+  │                 05-render/cNNN.jsonl     (per chapter: audio path, backend, attempts per line)
+  │  6. verify      06-verify/cNNN.jsonl     (per chapter: transcript, error rate; bad lines re-rendered)
+  │  7. build       07-chapters/cNNN.wav     (per chapter, with pauses)
+  │                 out/<book>.<backend>/cNNN.mp3   (each chapter as soon as it is rendered)
+  │                 out/<book>.<backend>.m4b        (whole book once every chapter is ready)
 ```
+
+### Chapter granularity
+
+Stages 4-7 work per chapter so that a 30-chapter novel re-runs only what
+changed, and chapters can be listened to while the rest renders. Each stage
+writes one file per chapter with its own `.inputs` stamp, and the stamp is
+the hash of the *previous stage's file for that chapter* plus the config the
+stage depends on:
+
+| Stage | File | Stamp inputs |
+|---|---|---|
+| attribute | `04-lines/cNNN.jsonl` | chapter title+paragraphs, language, cast names and aliases |
+| render | `05-render/cNNN.jsonl` | hash of the 04 file, backend name, voice map, params |
+| verify | `06-verify/cNNN.jsonl` | hash of the 05 file, whisper model, threshold |
+| build | `07-chapters/cNNN.wav` (+ `cNNN.mp3`) | hash of the 05 file, pauses |
+
+Consequences:
+
+- Editing chapter 5's text changes only its 04 stamp (ingest and normalize
+  re-run whole-file but are cheap); attribute re-runs chapter 5, which
+  changes its 04 hash, so render re-plans chapter 5, and unchanged lines are
+  cache hits. Chapter identity is positional: inserting a chapter shifts
+  everything after it, and those chapters re-run.
+- `ab fix` edits one 04 record and drops that line's 05 and 06 entries
+  without touching the 04 stamp (attribution need not re-run). The chapter's
+  render stamp is stale by hash, and render re-renders just that line.
+- A voice or param change in `book.yaml` is now detected (it is in the
+  render stamp); every unchanged line is a free cache hit.
+- Verify results carry the audio path they checked, so after a re-render a
+  line shows `error_rate None` until it is checked again, and only lines
+  without a current result are transcribed. When verify drops a line's audio
+  for a new seed it removes the chapter's render stamp, and the re-render
+  loop runs render only on the failed chapters.
+- Render still plans across the whole book so batches fill by voice across
+  chapters, and checkpoints write only the chapter files it touched, at
+  least every 60 s (`CHECKPOINT_SECONDS`), atomically (write to `.tmp`,
+  rename).
+- The cast stamp is the whole cast's names and aliases, not the chapter's
+  subset: adding an alias can change rule resolution anywhere. Description
+  edits re-run nothing; promoting a character to main re-attributes every
+  chapter because every prompt changes.
+- `Line` remains the in-memory model; `ab.lines.read_chapter` merges the
+  three files back into it for everything that only reads (script, report,
+  voices, play). Line ids (`cNNNpNNNNsNN`) and audio cache keys are the same
+  as before the split.
 
 ### 1. ingest
 
@@ -205,12 +253,11 @@ as little as possible:
    heuristics in two-person scenes are given as context. Qwen3 is strong in
    both languages, so the prompt is the same with the instructions written in
    the book's language.
-4. **Output** `lines.jsonl`, one record per utterance:
-   `{id, chapter, para, kind: narration|dialogue, speaker, text, confidence}`.
-   Low-confidence lines are listed in `attribute.review.txt` for manual fixes;
-   edits to `lines.jsonl` are respected on re-run (the stage does not
-   overwrite records whose text hash is unchanged and which are marked
-   `locked: true`).
+4. **Output** `04-lines/cNNN.jsonl`, one record per utterance:
+   `{id, chapter, para, kind: narration|dialogue, speaker, text, confidence, locked}`.
+   Low-confidence lines are listed in `04-attribute.review.txt` for manual
+   fixes; a record marked `locked: true` whose text is unchanged is kept
+   verbatim when its chapter re-runs.
 
 Emotion tags are out of scope for v1. The record schema has a free `style`
 field reserved so a later backend can consume them.
@@ -434,12 +481,16 @@ off by default and enabled per book; it is not needed with Kokoro.
 - Pause insertion: 0.35 s between sentences of one speaker, 0.6 s between
   paragraphs, 1.2 s before dialogue by a new speaker, 2.5 s at chapter start.
   All configurable in `book.yaml`.
-- Per-chapter WAV concatenation with 10 ms crossfades, then ffmpeg
-  `loudnorm` to -18 LUFS (audiobook norm), trim leading/trailing silence.
-- Encode AAC 64 kbps mono 44.1 kHz into M4B with ffmpeg, chapter markers from
-  the chapter list via an `ffmetadata` file, cover art and title/author tags
-  from front matter.
-- Also emit per-chapter MP3 as an option for players that dislike M4B.
+- Per-chapter WAV concatenation (`07-chapters/cNNN.wav`), rebuilt only when
+  the chapter's render file or the pauses changed.
+- Each chapter whose render is complete is also encoded on its own into
+  `out/<title>.<backend>/cNNN <title>.mp3` (`build.chapter_format`: `mp3`,
+  `m4b`, or `none`), with `loudnorm` and track tags, so `ab build` can run
+  beside a detached render and you can listen to finished chapters.
+- Once every chapter is ready: AAC 64 kbps mono 44.1 kHz into M4B with
+  ffmpeg, `loudnorm` to -18 LUFS, chapter markers from the chapter list via
+  an `ffmetadata` file, cover art and title/author tags from front matter.
+  Until then build reports how many chapters are ready and skips the M4B.
 
 ## Debuggability
 
@@ -447,13 +498,15 @@ A long unattended render must be inspectable afterwards without re-running
 anything, so the work directory is designed to be read by a person:
 
 - Artifacts are numbered by stage (`01-chapters.json` ... `07-chapters/`) so
-  a directory listing reads in pipeline order.
+  a directory listing reads in pipeline order; stages 4-7 hold one file per
+  chapter (`cNNN.jsonl`).
 - Every stage's `.inputs` stamp stores its named input hashes as JSON, and
   `ab status` diffs them to say which input changed ("stale: cast changed")
-  rather than only that something did.
+  rather than only that something did. `ab status --chapters` shows the same
+  per chapter, and `REPORT.md` includes the chapter grid.
 - `04-script.md` is the book as a screenplay with markers for model-attributed,
-  unknown, verify-failed, and hand-locked lines. It is regenerated whenever
-  `lines.jsonl` is written, so it is never out of date.
+  unknown, verify-failed, and hand-locked lines. It is regenerated at the end
+  of every stage that writes lines and by `ab fix`, so it is never out of date.
 - `05-audio/by-line/<id>.wav` symlinks map line ids to content-hashed files.
 - `run.log` accumulates timestamped stage summaries and durations across
   runs; `REPORT.md` is written at the end of every `ab run` with the stage
@@ -469,7 +522,9 @@ audiobook/
   src/ab/
     cli.py                  typer: ab ingest|normalize|cast|attribute|render|verify|build|run
     stages/                 s01_ingest.py ... s07_build.py, numbered in execution order;
-                            each: run(paths, cfg, force) -> artifact, inputs(paths, cfg) -> hashes
+                            each: run(paths, cfg, force[, chapters]) -> artifact, and
+                            inputs(paths, cfg) or chapter_states(paths, cfg) for `ab status`
+    lines.py                per-chapter line files (04/05/06) and the merged Line view
     voices.py               `ab voices-design` (a tool, not a pipeline stage)
     report.py               script.md, status table, REPORT.md, fix-line
     log.py                  console + work/run.log

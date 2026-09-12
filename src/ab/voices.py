@@ -16,7 +16,7 @@ from rich import print
 from rich.progress import track
 
 from ab.config import BookConfig, BookPaths
-from ab.stages.s04_attribute import read_lines
+from ab.lines import read_lines
 from ab.tts import load_backend
 
 _NARRATOR = {
@@ -70,8 +70,6 @@ def run(paths: BookPaths, cfg: BookConfig, force: bool = False, backend_name: st
 def _sample_text(paths: BookPaths, lang: str) -> dict[str, str]:
     """A short passage per role from the book itself, so the designed voice is
     heard saying words the character actually says."""
-    if not paths.lines.exists():
-        return {}
     out: dict[str, str] = {}
     joiner = "" if lang == "zh" else " "
     for ln in read_lines(paths):

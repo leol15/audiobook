@@ -1,8 +1,17 @@
-"""Stage 5: lines.jsonl -> work/audio/<hash>.wav, one file per line."""
+"""Stage 5: 04-lines/cNNN.jsonl -> 05-audio/<hash>.wav (one per line) + 05-render/cNNN.jsonl.
+
+Chapter-granular: a chapter's render file is stamped with the hash of its
+attribute file, the backend, the voice map and the params, so a fix in one
+chapter or a voice change re-plans only the chapters it touches. Planning is
+still whole-book so batches fill by voice across chapters. The audio cache
+is content-addressed (backend, voice, params incl. seed, text), so a
+"re-render" of an unchanged line is a cache hit.
+"""
 
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -13,58 +22,97 @@ from rich.progress import track
 from ab import cache
 from ab.audio import crossfade_concat
 from ab.config import BookConfig, BookPaths
+from ab.lines import chapter_indexes, read_attribution, read_render, write_render, write_views
 from ab.log import note
-from ab.stages.s04_attribute import read_lines, write_lines
+from ab.models import Line
 from ab.text import chunk_text
 from ab.tts import load_backend
 
-CHECKPOINT_EVERY = 10  # lines between lines.jsonl writes during a long render
+CHECKPOINT_SECONDS = 60  # render state is flushed at least this often during a long run
 
 
-def run(paths: BookPaths, cfg: BookConfig, force: bool = False):
+def run(paths: BookPaths, cfg: BookConfig, force: bool = False, chapters: set[int] | None = None):
     backend = load_backend(cfg.tts.backend, cfg.tts.params)
     try:
-        return _run(paths, cfg, backend, force)
+        return _run(paths, cfg, backend, force, chapters)
     finally:
         close = getattr(backend, "close", None)
         if close:
             close()
 
 
-def _run(paths: BookPaths, cfg: BookConfig, backend, force: bool):
+def chapter_inputs(paths: BookPaths, cfg: BookConfig, chapter: int, backend_name: str) -> dict:
+    f = paths.chapter_lines(chapter)
+    return {"lines": cache.file_hash(f) if f.exists() else "", "backend": backend_name,
+            "voices": cache.content_hash(cfg.voice_map(cfg.tts.backend)),
+            "params": cache.content_hash(cfg.tts.params)}
+
+
+def chapter_states(paths: BookPaths, cfg: BookConfig, backend_name: str | None) -> list[tuple[int, list[str]]]:
+    """(chapter, stale reasons) for every attributed chapter. A chapter whose
+    stamp matches but has a line without audio (verify dropped it) is stale too."""
+    out = []
+    for i in chapter_indexes(paths):
+        reasons = cache.stale_reasons(paths.chapter_render(i), chapter_inputs(paths, cfg, i, backend_name or ""))
+        if not reasons:
+            st = read_render(paths, i)
+            missing = [ln.id for ln in read_attribution(paths, i)
+                       if not (st.get(ln.id) and st[ln.id].audio and (paths.work / st[ln.id].audio).exists())]
+            if missing:
+                reasons = [f"{len(missing)} lines without audio"]
+        out.append((i, reasons))
+    return out
+
+
+def _run(paths: BookPaths, cfg: BookConfig, backend, force: bool, chapters: set[int] | None):
     if cfg.language not in backend.languages:
         raise SystemExit(f"backend {backend.name} does not support language {cfg.language!r}")
-    lines = read_lines(paths)
     paths.audio.mkdir(parents=True, exist_ok=True)
-    missing = [l for l in lines
-               if force or l.backend != backend.name
-               or not (l.audio and (paths.work / l.audio).exists())]
     voices = cfg.voice_map(cfg.tts.backend)
     batch_size = cfg.tts.batch or getattr(backend, "batch_size", 1)
     if batch_size > 1 and not hasattr(backend, "synthesize_batch"):
         batch_size = 1
 
-    # Plan: every missing line gets its cache path; lines without cached audio
-    # become (line, chunk) work items grouped by voice+params, so one model
-    # call renders many lines in the same voice.
+    # Plan: every stale chapter's lines get their cache path; lines without
+    # cached audio become (line, chunk) work items grouped by voice+params, so
+    # one model call renders many lines in the same voice, across chapters.
+    todo_chapters = [i for i, reasons in chapter_states(paths, cfg, backend.name)
+                     if (chapters is None or i in chapters) and (force or reasons)]
+    per_chapter: dict[int, list[Line]] = {}
     jobs: list[_Job] = []
-    for ln in missing:
-        voice = resolve_voice(voices, ln.speaker)
-        if (paths.root / voice).is_file():
-            voice = str((paths.root / voice).resolve())  # reference clip, not a preset id
-        params = {**cfg.tts.params, "seed": ln.attempts}
-        key = cache.render_key(backend.name, voice, params, ln.text)
-        out = paths.audio / f"{key}.wav"
-        chunks = chunk_text(ln.text, ln.lang, backend.max_chars) if force or not out.exists() else None
-        jobs.append(_Job(ln, voice, params, out, chunks))
+    for ci in todo_chapters:
+        lines = read_attribution(paths, ci)
+        state = read_render(paths, ci)
+        per_chapter[ci] = lines
+        for ln in lines:
+            st = state.get(ln.id)
+            if st:
+                ln.audio, ln.backend, ln.attempts = st.audio, st.backend, st.attempts
+            voice = resolve_voice(voices, ln.speaker)
+            if (paths.root / voice).is_file():
+                voice = str((paths.root / voice).resolve())  # reference clip, not a preset id
+            out = _expected(paths, backend.name, voice, cfg.tts.params, ln)
+            if ln.audio is not None and ln.audio != str(out.relative_to(paths.work)):
+                ln.attempts = 0  # text, voice, or backend changed: start the seed sequence over
+                out = _expected(paths, backend.name, voice, cfg.tts.params, ln)
+            params = {**cfg.tts.params, "seed": ln.attempts}
+            if not force and ln.audio == str(out.relative_to(paths.work)) and out.exists():
+                jobs.append(_Job(ln, ci, voice, params, out, None))
+                continue
+            chunks = chunk_text(ln.text, ln.lang, backend.max_chars) if force or not out.exists() else None
+            jobs.append(_Job(ln, ci, voice, params, out, chunks))
 
     todo = [j for j in jobs if j.chunks is not None]
     groups: dict[tuple, list[_Job]] = {}
     for j in todo:
         groups.setdefault((j.voice, json.dumps(j.params, sort_keys=True)), []).append(j)
     batches = list(_batches(groups, batch_size))
+    for j in jobs:
+        if j.chunks is None:
+            _mark(paths, j, backend.name)
 
-    finished = 0
+    dirty: set[int] = set(todo_chapters)
+    last_flush = time.time()
     progress = track(batches, description=f"render[{backend.name}]", total=len(batches))
     for batch in progress:
         pieces = _synthesize(backend, batch, batch_size)
@@ -75,23 +123,38 @@ def _run(paths: BookPaths, cfg: BookConfig, backend, force: bool):
                     else np.zeros(0, np.float32)
                 sf.write(job.out, audio, backend.sample_rate)
                 _mark(paths, job, backend.name)
-                finished += 1
-                if finished % CHECKPOINT_EVERY == 0:
-                    write_lines(paths, lines)  # progress survives an interrupted run
-    for j in jobs:
-        if j.chunks is None:
-            _mark(paths, j, backend.name)
-    write_lines(paths, lines)
-    _link_by_line(paths, lines)
-    note(paths, f"render[{backend.name}]: {len(todo)} lines synthesized in {len(batches)} calls "
-         f"(batch {batch_size}), {len(missing) - len(todo)} from cache, "
-         f"{len(lines) - len(missing)} untouched")
-    return paths.audio
+                dirty.add(job.chapter)
+        if time.time() - last_flush >= CHECKPOINT_SECONDS:
+            _flush(paths, per_chapter, dirty)  # progress survives an interrupted run
+            last_flush = time.time()
+    _flush(paths, per_chapter, dirty)
+    for ci, lines in per_chapter.items():
+        if all(ln.audio for ln in lines):
+            cache.mark_fresh(paths.chapter_render(ci), chapter_inputs(paths, cfg, ci, backend.name))
+    write_views(paths)
+    _link_by_line(paths)
+    n_lines = sum(len(v) for v in per_chapter.values())
+    note(paths, f"render[{backend.name}]: {len(todo_chapters)} chapters planned ({n_lines} lines): "
+         f"{len(todo)} synthesized in {len(batches)} calls (batch {batch_size}), "
+         f"{n_lines - len(todo)} from cache")
+    return paths.render_dir
+
+
+def _expected(paths: BookPaths, backend_name: str, voice: str, params: dict, ln: Line) -> Path:
+    key = cache.render_key(backend_name, voice, {**params, "seed": ln.attempts}, ln.text)
+    return paths.audio / f"{key}.wav"
+
+
+def _flush(paths: BookPaths, per_chapter: dict[int, list[Line]], dirty: set[int]) -> None:
+    for ci in sorted(dirty):
+        write_render(paths, ci, per_chapter[ci])
+    dirty.clear()
 
 
 @dataclass(eq=False)
 class _Job:
-    line: object
+    line: Line
+    chapter: int
     voice: str
     params: dict
     out: Path
@@ -100,7 +163,7 @@ class _Job:
 
 
 def _batches(groups: dict[tuple, list[_Job]], batch_size: int):
-    """Yield lists of (job, chunk text) no longer than batch_size, one voice each.
+    """Yield lists of (job, chunk index, chunk text) no longer than batch_size, one voice each.
 
     Within a voice, chunks are ordered by length so a batch finishes together:
     batched generation runs until its longest sequence stops. Multi-chunk
@@ -138,15 +201,16 @@ def _mark(paths: BookPaths, job: _Job, backend_name: str) -> None:
     ln.error_rate = None  # verify must look at the new audio
 
 
-def _link_by_line(paths: BookPaths, lines) -> None:
+def _link_by_line(paths: BookPaths) -> None:
     """05-audio/by-line/<line id>.wav -> ../<hash>.wav, so a line is easy to find and play."""
     d = paths.audio_by_line
     d.mkdir(parents=True, exist_ok=True)
     for old in d.glob("*.wav"):
         old.unlink()
-    for ln in lines:
-        if ln.audio:
-            (d / f"{ln.id}.wav").symlink_to(Path("..") / Path(ln.audio).name)
+    for ci in chapter_indexes(paths):
+        for st in read_render(paths, ci).values():
+            if st.audio:
+                (d / f"{st.id}.wav").symlink_to(Path("..") / Path(st.audio).name)
 
 
 def resolve_voice(voices: dict[str, str], speaker: str) -> str:

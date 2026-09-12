@@ -31,7 +31,10 @@ def test_end_to_end_tone(tmp_path):
     for stage in (ingest, normalize, attribute, render):
         stage.run(paths, cfg)
     out = build.run(paths, cfg)
-    assert out.exists() and out.stat().st_size > 1000
+    assert out.suffix == ".m4b" and out.exists() and out.stat().st_size > 1000
+    # per-chapter files appear alongside the whole book
+    mp3s = sorted(paths.out.glob("T.tone-test/*.mp3"))
+    assert [m.name[:4] for m in mp3s] == ["c000", "c001"]
     wavs = list(paths.audio.glob("*.wav"))
     n = len(wavs)
     assert n == 24  # one per paragraph, narrator-only mode (no cast.yaml)

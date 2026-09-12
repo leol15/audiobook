@@ -9,9 +9,9 @@ import numpy as np
 import soundfile as sf
 
 from ab.config import BookConfig, BookPaths
+from ab.lines import read_lines, write_attribution
 from ab.models import Line
 from ab.stages import s05_render as render
-from ab.stages.s04_attribute import read_lines, write_lines
 from ab.tts.tone import ToneBackend
 
 
@@ -52,14 +52,14 @@ def _book(tmp_path, batch=None):
         Line(id="c0p4s0", chapter=0, para=4, kind="narration", speaker="narrator", text="Four four."),
         Line(id="c0p5s0", chapter=0, para=5, kind="dialogue", speaker="Bob", text="Five."),
     ]
-    write_lines(paths, lines)
+    write_attribution(paths, 0, lines)
     return paths, cfg
 
 
 def test_batches_group_by_voice_and_cap_size(tmp_path):
     paths, cfg = _book(tmp_path)
     backend = BatchTone()
-    render._run(paths, cfg, backend, force=False)
+    render._run(paths, cfg, backend, force=False, chapters=None)
     by_voice = {}
     for voice, n in backend.calls:
         by_voice.setdefault(voice, []).append(n)
@@ -79,16 +79,16 @@ def test_batches_group_by_voice_and_cap_size(tmp_path):
 def test_batch_config_overrides_backend_default(tmp_path):
     paths, cfg = _book(tmp_path, batch=2)
     backend = BatchTone()
-    render._run(paths, cfg, backend, force=False)
+    render._run(paths, cfg, backend, force=False, chapters=None)
     assert max(n for _, n in backend.calls) == 2
 
 
 def test_batch_render_matches_single_render(tmp_path):
     paths, cfg = _book(tmp_path)
-    render._run(paths, cfg, BatchTone(), force=False)
+    render._run(paths, cfg, BatchTone(), force=False, chapters=None)
     batched = {ln.id: sf.read(paths.work / ln.audio)[0] for ln in read_lines(paths)}
     paths2, cfg2 = _book(tmp_path / "again", batch=1)
-    render._run(paths2, cfg2, BatchTone(), force=False)
+    render._run(paths2, cfg2, BatchTone(), force=False, chapters=None)
     single = {ln.id: sf.read(paths2.work / ln.audio)[0] for ln in read_lines(paths2)}
     for k, audio in batched.items():
         assert np.array_equal(audio, single[k])
@@ -106,6 +106,6 @@ def test_plain_backend_stays_single(tmp_path):
         return orig(text, voice, lang=lang, **p)
 
     tone.synthesize = spy
-    render._run(paths, cfg, tone, force=False)
+    render._run(paths, cfg, tone, force=False, chapters=None)
     assert len(calls) == 8  # 5 single-chunk lines + 3 chunks
-    assert all(json.loads(l)["audio"] for l in paths.lines.read_text().splitlines())
+    assert all(json.loads(l)["audio"] for l in paths.chapter_render(0).read_text().splitlines())
