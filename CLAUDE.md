@@ -46,6 +46,9 @@ uv run ab status books/<slug>       # fresh/stale (and which input changed)/miss
 uv run ab report books/<slug>       # work/REPORT.md
 uv run ab fix books/<slug> <line-id> --speaker NAME   # correct + lock + queue re-render
 uv run ab voices-design books/<slug>                  # Qwen3-TTS VoiceDesign clips from cast descriptions
+uv run ab new books/<slug> --source f.txt -l zh       # scaffold: commented book.yaml + ingest preview
+uv run ab voices-assign books/<slug> [--tts kokoro]   # built-in voice per main character from descriptions
+uv run ab check books/<slug>                          # voices/cast/backend validation (auto-runs before render)
 ```
 
 Long renders (Qwen3-TTS is a few x realtime with batching, 0.4x without) must be launched detached, or they
@@ -69,7 +72,7 @@ src/ab/
   llm.py          Ollama client, JSON-schema output, logs every exchange to work/03-llm.jsonl
   audio.py        crossfade concat, silence
   report.py       04-script.md writer, status table, REPORT.md, fix_line
-  voices.py       `ab voices-design`
+  voices.py       `ab voices-design`; assign.py + voicepool.py `ab voices-assign`; check.py; newbook.py
   stages/         s01_ingest ... s07_build (imported as `from ab.stages import s04_attribute as attribute`)
   tts/            base.py protocol; kokoro.py (in-process); subprocess.py (JSON-lines worker);
                   chatterbox.py, qwen3tts.py (thin subclasses); tone.py (test backend, no model)

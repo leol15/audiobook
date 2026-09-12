@@ -144,6 +144,14 @@ uv run ab fix books/x c000p0012s00 --speaker "Mrs. Bennet"   # correct + lock a 
 uv run ab play books/x c000p0012s00 # path of that line's audio
 ```
 
+`ab voices-assign` fills `voices.<backend>` for backends with a built-in
+voice pool (Kokoro, Qwen3-TTS presets). It reads gender and age out of each
+cast description in either language, gives the narrator a narrator-suitable
+voice, and gives every main character the best-matching unused voice, reusing
+one only when the pool for that gender runs out. Existing assignments are kept
+unless `--force`, so hand-picked voices survive re-runs. `ab voices-design` is
+the equivalent for Qwen3-TTS reference clips.
+
 `ab check` validates `book.yaml` voices against `cast.yaml` and the backend:
 unknown cast names (with a did-you-mean), unknown or wrong-language voice ids,
 missing clip files, and a missing narrator are errors and block `ab run` and

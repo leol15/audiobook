@@ -3,21 +3,23 @@ author: Unknown
 language: zh
 chapter_regex: ^\d{3}\s+\S.*$
 tts:
-  backend: kokoro
+  backend: qwen3tts
   params:
     speed: 1.0
 voices:
   kokoro:
     narrator: zm_yunyang
-    林风: zm_yunxi
-    未知角色1: zf_xiaobei
-    未知角色2: zm_yunjian
-    未知角色3: zf_xiaoni
-    _default: zf_xiaoxiao
+    林风: zm_yunjian
+    萱华: zf_xiaobei
+    系统: zf_xiaoni
+    刀疤御鬼者: zm_yunxi
+    无头将军: zf_xiaoxiao
+    _default: zm_yunyang
   qwen3tts:
     narrator: voices/narrator.wav
     林风: voices/林风.wav
-    未知角色1: voices/未知角色1.wav
-    未知角色2: voices/未知角色2.wav
-    未知角色3: voices/未知角色3.wav
+    萱华: voices/萱华.wav
+    系统: voices/系统.wav
+    刀疤御鬼者: voices/刀疤御鬼者.wav
+    无头将军: voices/无头将军.wav
     _default: voices/narrator.wav

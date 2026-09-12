@@ -275,3 +275,16 @@ def check(
     if not errors and not warnings:
         print("[green]ok[/] voices, cast and backend are consistent")
     raise typer.Exit(code=1 if errors else 0)
+
+
+@app.command("voices-assign")
+def voices_assign(
+    book: Path = typer.Argument(..., help="Book directory"),
+    tts: str | None = typer.Option(None, help="Backend with a built-in voice pool (default: book.yaml)"),
+    force: bool = typer.Option(False, help="Reassign roles that already have a voice"),
+):
+    """Pick a built-in voice per main cast member from cast.yaml descriptions (Kokoro, presets)."""
+    from ab.assign import run as _assign
+
+    paths = _book(book)
+    _assign(paths, paths.load_config(), backend=tts, force=force)

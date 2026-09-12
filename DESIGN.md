@@ -499,6 +499,25 @@ off by default and enabled per book; it is not needed with Kokoro.
   an `ffmetadata` file, cover art and title/author tags from front matter.
   Until then build reports how many chapters are ready and skips the M4B.
 
+## book.yaml lifecycle
+
+`book.yaml` is the one file a person edits, so it should never have to be
+written from memory and never silently wrong:
+
+- `ab new` writes it with every key present, commented, and defaulted, and
+  runs ingest immediately so a wrong chapter regex is the first thing seen,
+  not the last.
+- Voice maps are filled by tools, not typed: `ab voices-assign` for built-in
+  pools (gender and age parsed from cast descriptions, narrator-suitable
+  voices flagged in `voicepool.py`), `ab voices-design` for Qwen3-TTS clips.
+  Both keep existing entries unless forced, so a chosen voice is never lost.
+- `ab check` runs before every render and refuses to start with a voice map
+  that would fail or silently misroute: unknown cast names (with a
+  did-you-mean), unknown or wrong-language voice ids, missing clip files, no
+  narrator. Unvoiced main characters, alias matches, and shared voices are
+  warnings. The failure mode this closes is a typo in a character name
+  sending that character to the default voice with no message anywhere.
+
 ## Debuggability
 
 A long unattended render must be inspectable afterwards without re-running
@@ -533,6 +552,8 @@ audiobook/
                             inputs(paths, cfg) or chapter_states(paths, cfg) for `ab status`
     lines.py                per-chapter line files (04/05/06) and the merged Line view
     voices.py               `ab voices-design` (a tool, not a pipeline stage)
+    assign.py, voicepool.py `ab voices-assign` and the annotated built-in voice catalogs
+    check.py, newbook.py    `ab check` (gates render) and `ab new`
     report.py               script.md, status table, REPORT.md, fix-line
     log.py                  console + work/run.log
     tts/                    base.py (protocol), kokoro.py, chatterbox.py, subprocess.py
