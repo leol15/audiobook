@@ -11,7 +11,7 @@ import yaml
 from rich.progress import track
 
 from ab.config import BookConfig, BookPaths
-from ab.llm import Ollama
+from ab.llm import Ollama, pack
 from ab.log import note
 from ab.models import ChapterList
 
@@ -86,14 +86,17 @@ def run(paths: BookPaths, cfg: BookConfig, force: bool = False):
     if paths.cast.exists() and not force:
         return paths.cast
     lang = cfg.language
-    llm = Ollama(log=paths.llm_log)
+    llm = Ollama.from_config(cfg, log=paths.llm_log)
     book = ChapterList.model_validate_json(paths.chapters_norm.read_text(encoding="utf-8"))
 
     found: list[dict] = []
+    budget = llm.window_budget(_DISCOVER[lang].format(text="") + _SYSTEM[lang])
     for ch in track(book.chapters, description="cast: discover"):
-        text = "\n\n".join(ch.paragraphs)
-        for start in range(0, len(text), 12000):
-            res = llm.json(_DISCOVER[lang].format(text=text[start : start + 12000]),
+        # Windows of whole paragraphs sized to the context budget, not a fixed
+        # character count: 12k Chinese characters is ~8k tokens, twice Ollama's
+        # default window, and was being truncated silently.
+        for window in pack(ch.paragraphs, budget):
+            res = llm.json(_DISCOVER[lang].format(text="\n\n".join(window)),
                            _DISCOVER_SCHEMA, system=_SYSTEM[lang])
             found.extend(res.get("characters", []))
 

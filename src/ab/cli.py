@@ -108,6 +108,8 @@ def llm_check():
 
     o = Ollama()
     print(f"{o.url}: {o.ping()}")
+    print(f"[dim]default model {o.model}, num_ctx {o.num_ctx} "
+          f"(prompt budget {o.prompt_budget} tokens; set llm.num_ctx in book.yaml)[/]")
 
 
 @app.command("voices-design")

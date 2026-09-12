@@ -101,9 +101,10 @@ compares toneless pinyin (whisper emits traditional script and homophones).
 
 ## Known issues / traps
 
-1. **Ollama `num_ctx` defaults to 4096** (modelfile does not set it; the model
-   supports 40k). Cast windows are 12k chars and get truncated silently.
-   Fix: pass `options.num_ctx` in `llm.py` and size windows to it. Not yet done.
+1. Ollama `num_ctx` defaults to 4096 and truncates silently. Fixed: every
+   request sends `llm.num_ctx` (book.yaml, default 16384), windows are sized
+   from the budget, and an oversized prompt raises `PromptTooLong`. Token
+   estimate is 1/CJK char, 1/3 other chars (measured ~1.5 and ~3.7 real).
 2. Cast alias merge is a single prompt over all chapters' entries; will not
    fit a novel. Attribute prompts list the whole cast every window.
 3. `ab run` background jobs launched via the harness die with the session.
@@ -115,7 +116,7 @@ compares toneless pinyin (whisper emits traditional script and homophones).
 
 ## Next tracks (agreed order)
 
-Scale (whole-book) track: (a) `num_ctx` fix, (b) incremental cast merge +
+Scale (whole-book) track: (a) `num_ctx` fix (done), (b) incremental cast merge +
 main-cast cap + per-chapter cast in attribute prompts, (c) chapter-granular
 artifacts for attribute/render/verify/build so only changed chapters re-run
 and chapters can be listened to as they finish, (d) batched whisper in verify

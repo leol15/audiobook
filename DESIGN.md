@@ -38,6 +38,35 @@ The LLM client reads `OLLAMA_URL` (default `http://localhost:11434`), so
 either setup is a one-line config. Pull models from the Windows side:
 `ollama pull qwen3:14b`.
 
+### Context window
+
+Ollama's default `num_ctx` is 4096 tokens regardless of what the model
+supports, and a longer prompt is truncated silently: the model answers from
+the tail of the passage and nothing downstream can tell. A 12k-character
+Chinese cast window is ~8k tokens, so the cast stage was losing the first
+half of every chapter before this was found. Rules now:
+
+- Every request sends `options.num_ctx` (`llm.num_ctx` in `book.yaml`,
+  default 16384; `llm.model` picks the model). `OUTPUT_RESERVE` (2048
+  tokens) is kept free for the JSON answer, so the prompt budget is
+  `num_ctx - 2048`.
+- Token counts are estimated conservatively without a tokenizer: one token
+  per CJK character, one per three other characters. Measured against
+  Qwen3's own counts (Ollama reports `prompt_eval_count`), Chinese runs at
+  ~1.5 characters per token and English at ~3.7, so the estimate overshoots
+  by a third; that is the safety margin.
+- Stages size their windows from the budget, not from a fixed character
+  count: cast discovery packs whole paragraphs of a chapter until the budget
+  is full (`llm.pack`), and attribute windows are at most 12 paragraphs but
+  fewer if the cast list plus 4 context paragraphs plus the window would
+  overflow (`attribute.windows`).
+- `Ollama.json` raises `PromptTooLong` before sending anything over budget,
+  and again after the reply if Ollama's `prompt_eval_count` exceeds the
+  budget (it reports fewer tokens when a prefix was cached, never more). A
+  too-long prompt is an error that names the fix, never a quietly wrong
+  answer. `work/03-llm.jsonl` records `num_ctx` and the real token count of
+  every exchange.
+
 ## Design principle: the LLM labels spans, it never emits text
 
 Every character in `lines.jsonl` is read aloud, and the verify stage only

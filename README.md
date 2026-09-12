@@ -41,6 +41,18 @@ in `book.yaml` under `voices:` exactly like Kokoro voice ids. Params under
 `work/verify.review.txt` lists lines still above the error threshold after
 re-rendering; `work/llm.jsonl` logs every LLM exchange for debugging.
 
+The LLM (cast and attribute stages) is configured per book:
+
+```yaml
+llm:
+  model: qwen3:14b     # default: OLLAMA_MODEL env, then qwen3:14b
+  num_ctx: 16384       # context window requested from Ollama (its default 4096 truncates silently)
+```
+
+Prompts are sized to `num_ctx` and a prompt that would not fit is an error
+(`PromptTooLong`) telling you to raise `num_ctx`, never a truncated answer.
+`ab llm-check` prints the model, window, and prompt budget in use.
+
 ## Qwen3-TTS backend
 
 Apache 2.0, strong Mandarin, preset speakers or reference-clip cloning.

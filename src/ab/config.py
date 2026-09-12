@@ -26,6 +26,13 @@ class TTSConfig(BaseModel):
     batch: int | None = None
 
 
+class LLMConfig(BaseModel):
+    model: str | None = None   # default: OLLAMA_MODEL env or qwen3:14b
+    # Context window requested from Ollama. Its default is 4096 and it truncates
+    # silently; cast/attribute windows are sized from this so prompts always fit.
+    num_ctx: int = 16384
+
+
 class VerifyConfig(BaseModel):
     threshold: float = 0.15
     max_attempts: int = 3
@@ -39,6 +46,7 @@ class BookConfig(BaseModel):
     cover: str | None = None
     chapter_regex: str | None = None
     tts: TTSConfig = Field(default_factory=TTSConfig)
+    llm: LLMConfig = Field(default_factory=LLMConfig)
     # role -> voice id, where roles are "narrator", "_default", or a cast name.
     # Either one flat map, or one map per backend name:
     #   voices: {narrator: bm_george}                     # applies to any backend

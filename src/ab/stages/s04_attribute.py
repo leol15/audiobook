@@ -61,7 +61,7 @@ _PROMPT = {
 import re
 
 _HAS_WORD = re.compile(r"\w")
-WINDOW = 12   # paragraphs per LLM call
+WINDOW = 12   # max paragraphs per LLM call (fewer if the context budget fills first)
 CONTEXT = 4   # preceding paragraphs shown for context
 
 
@@ -83,7 +83,7 @@ def run(paths: BookPaths, cfg: BookConfig, force: bool = False):
     llm = None
     if cast.characters:
         from ab.llm import Ollama
-        llm = Ollama(log=paths.llm_log)
+        llm = Ollama.from_config(cfg, log=paths.llm_log)
 
     for ch in track(book.chapters, description="attribute"):
         if not cast.characters:
@@ -127,8 +127,9 @@ def _narr(text: str):
 def _llm_fill(paras: list[ParaSpans], cast: Cast, lang: str, llm, stats: dict) -> None:
     cast_txt = "\n".join(f"- {n}" + (f" ({', '.join(c.aliases)})" if c.aliases else "")
                          for n, c in cast.characters.items())
-    for start in range(0, len(paras), WINDOW):
-        window = paras[start : start + WINDOW]
+    for start, end in windows(paras, llm, _PROMPT[lang].format(cast=cast_txt, passage="")
+                              + _SYSTEM[lang]):
+        window = paras[start:end]
         pending = {sp.quote_id: sp for ps in window for sp in ps.spans
                    if sp.kind == "dialogue" and not sp.speaker}
         if not pending:
@@ -150,6 +151,28 @@ def _llm_fill(paras: list[ParaSpans], cast: Cast, lang: str, llm, stats: dict) -
             if not sp.speaker:
                 sp.speaker, sp.confidence = "unknown", 0.0
                 stats["unknown"] += 1
+
+
+def windows(paras: list[ParaSpans], llm, overhead: str) -> list[tuple[int, int]]:
+    """(start, end) paragraph ranges per LLM call: at most WINDOW paragraphs, and
+    never more than the context budget allows once CONTEXT preceding paragraphs
+    are included. A single paragraph over budget is still sent alone, so that
+    `Ollama.json` fails loudly instead of Ollama truncating."""
+    from ab.llm import approx_tokens
+
+    budget = llm.window_budget(overhead)
+    sizes = [approx_tokens(_render_para(ps)) + 2 for ps in paras]
+    out: list[tuple[int, int]] = []
+    start = 0
+    while start < len(paras):
+        used = sum(sizes[max(0, start - CONTEXT):start])
+        end = start
+        while end < len(paras) and end - start < WINDOW and (end == start or used + sizes[end] <= budget):
+            used += sizes[end]
+            end += 1
+        out.append((start, end))
+        start = end
+    return out
 
 
 def _render_para(ps: ParaSpans) -> str:
