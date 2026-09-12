@@ -86,27 +86,98 @@ view with `(?)` on model-attributed lines and `(!)` on unknown speakers.
 
 ## 4. Voices
 
-One of:
+Voices are set per backend in `book.yaml` under `voices:`. Each map goes
+from a role to a voice id; roles are `narrator`, `_default` (anyone without
+an entry, including minor characters), and cast names exactly as written in
+`cast.yaml`. Which map is used follows `tts.backend`, so you can keep both
+and switch backends without editing voices.
 
-```bash
-uv run ab voices-design books/<slug>      # qwen3tts: one clip per main role from the descriptions (~2-4 min)
-uv run ab voices-assign books/<slug>      # kokoro / presets: pick built-in voices by gender and age (instant)
+```yaml
+voices:
+  kokoro:
+    narrator: zm_yunyang
+    林风: zm_yunxi
+    _default: zf_xiaoxiao
+  qwen3tts:
+    narrator: voices/narrator.wav
+    林风: voices/林风.wav
+    _default: voices/narrator.wav
 ```
 
-Then validate:
+### 4a. Qwen3-TTS (best Mandarin; `tts.backend: qwen3tts`)
+
+A voice id is either a **preset speaker name** or a **path to a reference
+clip** (relative to the book directory). The worker picks the model by the
+id: presets use CustomVoice, clips use Base with voice cloning.
+
+Presets (`uv run ab voices qwen3tts` lists them):
+
+| Mandarin | English |
+|---|---|
+| `Vivian` young f, `Serena` young f, `Uncle_Fu` old m (narrator), `Dylan` young m, `Eric` adult m | `Ryan` adult m (narrator), `Aiden` young m |
+
+Five Mandarin presets run out fast, so the normal route is designed clips:
+
+```bash
+uv run ab voices-design books/<slug>          # ~2-4 min; first run downloads the VoiceDesign weights
+```
+
+For the narrator and every `main: true` cast member it reads the description
+from `cast.yaml` (the narrator uses `narrator_description` in `book.yaml`,
+or a built-in default), has the VoiceDesign model speak a few of that
+character's own lines in that voice, and saves `voices/<role>.wav` plus a
+`.txt` transcript. It then writes the `voices.qwen3tts` map for you. Existing
+clips are kept, so:
+
+- to redo one voice: sharpen its description in `cast.yaml`, delete its
+  `.wav` and `.txt`, rerun `voices-design`;
+- to redo all: `voices-design --force`;
+- to use a preset for someone instead: replace that entry in the map with
+  the preset name (a map can mix presets and clips);
+- to clone a real voice: drop a 5-15 s clean wav under `voices/`, put its
+  transcript in a `.txt` with the same stem, and point the entry at it.
+
+Style knobs for presets go in `tts.params.instruct` (e.g. `"calm, low
+voice"`); clips ignore it. Batch size is `tts.batch` (default 32).
+
+### 4b. Kokoro (fast; `tts.backend: kokoro`)
+
+Voice ids are Kokoro's built-in names; the first letters encode language and
+gender: `af_`/`am_` American female/male, `bf_`/`bm_` British, `zf_`/`zm_`
+Mandarin. A Mandarin book must use `z*` voices and an English book must not;
+`ab check` enforces this. `uv run ab voices kokoro` lists them.
+
+```bash
+uv run ab voices-assign books/<slug>          # instant, no model
+```
+
+reads gender and age from each main character's description, gives the
+narrator a narrator-suitable voice, and gives each character the
+best-matching unused voice (reusing one only when that gender's voices run
+out; Mandarin has four per gender). Existing entries are kept unless
+`--force`. Edit the map by hand afterwards if a choice sounds wrong; there
+is no cloning or design for Kokoro.
+
+`voices-assign` also works for Qwen3-TTS presets (`--tts qwen3tts`) when you
+want presets rather than clips.
+
+### 4c. Validate
 
 ```bash
 uv run ab check books/<slug>
 ```
 
-`check` also runs automatically before any render and refuses to start on
-errors (unknown cast name, unknown voice id, missing clip, no narrator).
+Runs automatically before any render and refuses to start on errors: a voice
+key that is not a cast name (with a did-you-mean), an unknown or
+wrong-language voice id, a missing clip file, no narrator. Warnings only:
+main characters still on `_default`, entries matched by alias, one voice
+shared by several characters.
 
-**Clip sanity.** Designed clips should be 5-15 s. A clip that is much longer
-or cut mid-sentence makes the clone loop or babble on every line of that
-character. Delete the bad `.wav` and `.txt` under `voices/` and rerun
-`voices-design`; it regenerates only what is missing, and render re-renders
-only that character's lines.
+**Clip sanity (Qwen3-TTS).** Designed or supplied clips should be 5-15 s of
+clean speech with a matching transcript. A clip that is much longer or cut
+mid-sentence makes the clone loop or babble on every line of that character
+(this happened once: a 30 s clip). Delete the bad `.wav` and `.txt` and rerun
+`voices-design`; only that character's lines re-render.
 
 ## 5. Render, verify, build
 
