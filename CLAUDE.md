@@ -135,6 +135,9 @@ compares toneless pinyin (whisper emits traditional script and homophones).
    (`<title>.qwen3tts-1.7B.m4b` and the `<title>.qwen3tts-1.7B/` chapter
    folder); the newer overwrites.
 6. `report._backend_name()` hardcodes registry→backend.name; keep in sync.
+7. Symptom "GPU 100%, VRAM full, no new wavs for many minutes" during a
+   Qwen3-TTS render = a runaway batch. The worker caps tokens by text length
+   now (see DESIGN.md); if it recurs, lower `tts.batch` and check `nvidia-smi`.
 
 ## Next tracks (agreed order)
 

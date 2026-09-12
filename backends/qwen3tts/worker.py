@@ -95,8 +95,24 @@ def _chunk_vocoder(model, n: int) -> None:
     tok.decode = decode
 
 
+# Audio tokens per second of speech (12Hz codec) and rough speaking rates.
+_TOKENS_PER_S = 12
+_CHARS_PER_S = {"Chinese": 4.0, "English": 15.0}
+
+
+def token_cap(texts: list[str], lang: str, factor: float = 2.0, headroom: int = 48) -> int:
+    """Upper bound on new tokens for a batch: twice the expected length of its
+    longest text, plus headroom. Bounds runaway generations (a sequence that
+    never emits end-of-speech would otherwise run to 2048 tokens = 170 s of
+    audio, dragging the whole batch and its KV cache with it)."""
+    longest = max((len(t) for t in texts), default=0)
+    expected = longest / _CHARS_PER_S.get(lang, 8.0) * _TOKENS_PER_S
+    return int(expected * factor) + headroom
+
+
 def synthesize(models: Models, texts: list[str], voice: str, lang: str, p: dict) -> tuple[list, int]:
-    gen = {"max_new_tokens": int(p.get("max_new_tokens", 2048))}
+    cap = int(p["max_new_tokens"]) if "max_new_tokens" in p else min(2048, token_cap(texts, lang))
+    gen = {"max_new_tokens": cap}
     if voice in _PRESETS:
         return models.get("CustomVoice").generate_custom_voice(
             text=texts, language=lang, speaker=voice, instruct=str(p.get("instruct", "")), **gen)

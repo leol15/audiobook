@@ -518,6 +518,20 @@ written from memory and never silently wrong:
   warnings. The failure mode this closes is a typo in a character name
   sending that character to the default voice with no message anywhere.
 
+## Qwen3-TTS runaway generations
+
+Observed on the first five-chapter render: after 350 lines in three minutes,
+one batch ran for over twenty minutes with the GPU at 100% and VRAM at the
+16 GB ceiling. Ollama held nothing. The explanation that fits is a sequence
+that never emitted end-of-speech: generation runs to `max_new_tokens` (2048
+tokens = 170 s of audio) for the whole batch, and the KV cache for 16
+sequences that long spills past VRAM, which on Windows drivers slows each
+step to a crawl instead of failing. The worker now caps new tokens per batch
+at twice the expected length of its longest text plus headroom (12 tokens per
+second; about 4 Chinese or 15 English characters per second), so a runaway
+costs at most a few seconds of garbage audio, which verify then catches and
+re-renders with a new seed. `tts.params.max_new_tokens` overrides the cap.
+
 ## Debuggability
 
 A long unattended render must be inspectable afterwards without re-running
