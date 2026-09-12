@@ -53,6 +53,25 @@ Prompts are sized to `num_ctx` and a prompt that would not fit is an error
 (`PromptTooLong`) telling you to raise `num_ctx`, never a truncated answer.
 `ab llm-check` prints the model, window, and prompt budget in use.
 
+## Cast for a whole novel
+
+`ab cast` discovers speakers chapter by chapter (cached in `work/03-cast/`),
+merges aliases a few chapters at a time against the running cast, then ranks
+everyone by dialogue lines the rules could attribute. The top `cast.main_cap`
+(default 20) are marked `main: true` in `cast.yaml`:
+
+```yaml
+cast:
+  main_cap: 20        # characters that get a voice and appear in every attribute prompt
+  merge_chapters: 5   # chapters merged per LLM call
+```
+
+Give main characters voices in `book.yaml`; everyone else uses `_default`
+and is only offered to the attribute model in chapters where they speak.
+Edit `cast.yaml` freely (set `main: true` to promote someone, move a name
+into `aliases` to fix a merge); it is never overwritten without `--force`,
+and `--force` re-asks the model only about chapters whose text changed.
+
 ## Qwen3-TTS backend
 
 Apache 2.0, strong Mandarin, preset speakers or reference-clip cloning.

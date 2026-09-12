@@ -105,8 +105,12 @@ compares toneless pinyin (whisper emits traditional script and homophones).
    request sends `llm.num_ctx` (book.yaml, default 16384), windows are sized
    from the budget, and an oversized prompt raises `PromptTooLong`. Token
    estimate is 1/CJK char, 1/3 other chars (measured ~1.5 and ~3.7 real).
-2. Cast alias merge is a single prompt over all chapters' entries; will not
-   fit a novel. Attribute prompts list the whole cast every window.
+2. Cast merge is incremental (batches of `cast.merge_chapters` against the
+   running cast), ranked by rule-attributed lines, top `cast.main_cap` are
+   `main`. Attribute prompts list main + chapter characters. Existing
+   cast.yaml files without `main`/`chapters` fields are treated as all-main.
+   Ranking is only as good as the speech-tag rules: on Chinese few lines
+   resolve, so mentions decide most of the order.
 3. `ab run` background jobs launched via the harness die with the session.
 4. `uv sync` in the main venv once removed `en-core-web-sm`; Kokoro English
    still worked. If English G2P breaks, that is the first suspect.

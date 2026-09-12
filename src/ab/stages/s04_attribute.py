@@ -90,7 +90,7 @@ def run(paths: BookPaths, cfg: BookConfig, force: bool = False):
             paras = [ParaSpans(para=i, spans=[_narr(p)]) for i, p in enumerate(ch.paragraphs)]
         else:
             paras = extract(ch.paragraphs, cfg.language, cast.resolve)
-            _llm_fill(paras, cast, cfg.language, llm, stats)
+            _llm_fill(paras, cast, cfg.language, llm, stats, names=cast.names_for_chapter(ch.index))
         for ps in paras:
             for si, sp in enumerate(ps.spans):
                 if not _HAS_WORD.search(sp.text):
@@ -124,9 +124,14 @@ def _narr(text: str):
     return Span("narration", text, "narrator", 1.0)
 
 
-def _llm_fill(paras: list[ParaSpans], cast: Cast, lang: str, llm, stats: dict) -> None:
-    cast_txt = "\n".join(f"- {n}" + (f" ({', '.join(c.aliases)})" if c.aliases else "")
-                         for n, c in cast.characters.items())
+def _llm_fill(paras: list[ParaSpans], cast: Cast, lang: str, llm, stats: dict,
+              names: list[str] | None = None) -> None:
+    """Ask the LLM for the speakers the rules left open. The prompt lists only
+    `names` (main cast plus this chapter's characters; default all), but the
+    answer is resolved against the whole cast."""
+    names = list(cast.characters) if names is None else names
+    cast_txt = "\n".join(f"- {n}" + (f" ({', '.join(cast.characters[n].aliases)})"
+                                    if cast.characters[n].aliases else "") for n in names)
     for start, end in windows(paras, llm, _PROMPT[lang].format(cast=cast_txt, passage="")
                               + _SYSTEM[lang]):
         window = paras[start:end]

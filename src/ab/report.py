@@ -90,8 +90,10 @@ def stage_status(paths: BookPaths, cfg: BookConfig) -> list[dict]:
     stamped("ingest", paths.chapters, ingest.inputs, lambda: n_chapters(paths.chapters))
     stamped("normalize", paths.chapters_norm, normalize.inputs, lambda: n_chapters(paths.chapters_norm))
     cast = paths.load_cast()
+    n_main = sum(1 for c in cast.characters.values() if c.main)
     rows.append({"stage": "cast", "state": "fresh" if paths.cast.exists() else "missing",
-                     "detail": f"{len(cast.characters)} characters" if cast.characters else "narrator only",
+                     "detail": f"{len(cast.characters)} characters, {n_main} main" if cast.characters
+                     else "narrator only",
                      "artifact": paths.cast})
 
     lines: list[Line] = []

@@ -36,7 +36,8 @@ def run(paths: BookPaths, cfg: BookConfig, force: bool = False, backend_name: st
     lang = cfg.language
     roles: dict[str, str] = {"narrator": cfg.narrator_description or _NARRATOR[lang]}
     for name, ch in cast.characters.items():
-        roles[name] = ch.description or name
+        if ch.main:  # minor characters use _default, so they need no clip
+            roles[name] = ch.description or name
     if not roles:
         raise SystemExit("no roles: run `ab cast` first")
 

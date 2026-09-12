@@ -33,6 +33,17 @@ class LLMConfig(BaseModel):
     num_ctx: int = 16384
 
 
+class CastConfig(BaseModel):
+    # Characters ranked highest by (rule-attributed) line count are the main
+    # cast: listed in every attribute prompt and expected to have a voice.
+    # The rest are listed only in chapters where they appear and fall back to
+    # the _default voice.
+    main_cap: int = 20
+    # Chapters whose discovered characters are merged per LLM call, against
+    # the running cast (also bounded by the context budget).
+    merge_chapters: int = 5
+
+
 class VerifyConfig(BaseModel):
     threshold: float = 0.15
     max_attempts: int = 3
@@ -47,6 +58,7 @@ class BookConfig(BaseModel):
     chapter_regex: str | None = None
     tts: TTSConfig = Field(default_factory=TTSConfig)
     llm: LLMConfig = Field(default_factory=LLMConfig)
+    cast: CastConfig = Field(default_factory=CastConfig)
     # role -> voice id, where roles are "narrator", "_default", or a cast name.
     # Either one flat map, or one map per backend name:
     #   voices: {narrator: bm_george}                     # applies to any backend
@@ -70,10 +82,17 @@ class BookConfig(BaseModel):
 class Character(BaseModel):
     aliases: list[str] = Field(default_factory=list)
     description: str = ""
+    main: bool = True              # in every attribute prompt; give it a voice in book.yaml
+    lines: int = 0                 # dialogue lines resolved by rules at cast time (ranking hint)
+    chapters: list[int] = Field(default_factory=list)  # chapter indexes where the character speaks
 
 
 class Cast(BaseModel):
     characters: dict[str, Character] = Field(default_factory=dict)
+
+    def names_for_chapter(self, chapter: int) -> list[str]:
+        """Main cast plus characters known to speak in this chapter, in cast order."""
+        return [n for n, c in self.characters.items() if c.main or chapter in c.chapters]
 
     def resolve(self, name: str) -> str | None:
         """Map a name or alias to a canonical cast name.
@@ -109,6 +128,7 @@ class BookPaths:
         self.chapters = w / "01-chapters.json"
         self.chapters_norm = w / "02-chapters.norm.json"
         self.llm_log = w / "03-llm.jsonl"          # cast + attribute exchanges
+        self.cast_work = w / "03-cast"             # per-chapter discovery results (cache)
         self.lines = w / "04-lines.jsonl"
         self.script = w / "04-script.md"           # human-readable view of lines
         self.attribute_review = w / "04-attribute.review.txt"

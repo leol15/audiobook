@@ -138,25 +138,49 @@ substitution since Kokoro accepts phoneme hints via its `misaki` G2P.
 
 ### 3. cast
 
-Two passes with the local LLM (Ollama, Qwen3-14B Q4 default; Qwen3-8B if you
-want speed):
+Three passes with the local LLM (Ollama, Qwen3-14B Q4 default; Qwen3-8B if
+you want speed), sized so a 30-chapter novel works:
 
-1. Per chapter: list named speaking characters with a one-line description.
-2. Whole book: merge aliases ("Mr. Darcy", "Darcy", "Fitzwilliam") into one
-   entry each.
+1. **Discover, per chapter.** List named speaking characters with aliases and
+   a one-line description. Each chapter's answer is cached in
+   `work/03-cast/cNNN.json` keyed by the chapter's text, so `ab cast --force`
+   after editing one chapter only re-asks about that chapter.
+2. **Merge, incrementally.** The old design sent every chapter's entries in
+   one prompt, which cannot fit a novel. Now a few chapters at a time
+   (`cast.merge_chapters`, default 5, also bounded by the context budget)
+   are matched against the *running* cast: the prompt lists known canonical
+   names and the new entries, and the model returns groups whose canonical
+   is either a known name or a new person. An entry whose name already
+   resolves against the running cast is folded in without a model call. A
+   group's aliases carry the chapter indexes of the entries they came from,
+   and anything the model silently dropped is kept as its own character.
+3. **Rank, no model.** Rule-based speech-tag attribution (the same
+   `quotes.extract` the attribute stage uses) runs over the whole book and
+   counts dialogue lines per character; name mentions break ties. The top
+   `cast.main_cap` (default 20) are the main cast.
 
-Writes `cast.yaml`. You edit it once to assign voices:
+Writes `cast.yaml`, ordered by rank:
 
 ```yaml
-narrator: { voice: bm_george }
 characters:
-  Elizabeth: { voice: bf_emma, aliases: [Lizzy, Miss Bennet] }
-  Darcy:     { voice: bm_lewis, aliases: [Mr. Darcy, Fitzwilliam] }
-  _default:  { voice: af_sky }     # unassigned or minor characters
+  Elizabeth: { aliases: [Lizzy, Miss Bennet], description: "...", main: true, lines: 143, chapters: [0, 1, 4] }
+  Darcy:     { aliases: [Mr. Darcy, Fitzwilliam], description: "...", main: true, lines: 97, chapters: [2, 4] }
+  the butler: { aliases: [], description: "...", main: false, lines: 2, chapters: [7] }
 ```
 
-The cast stage never runs again unless you delete the file. Human review of
-this one small file fixes most attribution errors upstream.
+`main: true` characters are listed in every attribute prompt and should get a
+voice in `book.yaml`; `ab voices-design` designs clips only for them. Minor
+characters are listed to the attribute LLM only in the chapters where they
+were found speaking (`chapters`), so the prompt stays short and the model is
+not offered a hundred names to confuse, and they fall through to the
+`_default` voice in render. `lines` is the rule-resolved count at cast time,
+a ranking hint rather than a total (Chinese speech tags resolve fewer lines
+than English ones, so mentions matter more there). A `cast.yaml` without
+these fields (written before they existed) treats every character as main.
+
+You edit the file to fix merges or promote a character; the stage never
+runs again unless you `--force` it or delete the file. Human review of this
+one small file fixes most attribution errors upstream.
 
 ### 4. attribute
 
@@ -173,8 +197,11 @@ as little as possible:
    Chinese `X说` / `X道` / `X问` / `X答道` and the `X说：“…”` colon form.
    This resolves most lines with zero model calls.
 3. **Speaker assignment (LLM).** Remaining quotes go to the LLM in windows of
-   ~10 paragraphs with the cast list, previous window's last speakers, and a
-   strict JSON schema: `{quote_id, speaker, confidence}`. Alternating-speaker
+   up to 12 paragraphs (fewer if the context budget fills) with the cast list
+   for that chapter (main cast plus characters discovered in it), the
+   preceding paragraphs as context, and a strict JSON schema:
+   `{quote_id, speaker, confidence}`. Answers are resolved against the whole
+   cast, so a name the model knows from context still counts. Alternating-speaker
    heuristics in two-person scenes are given as context. Qwen3 is strong in
    both languages, so the prompt is the same with the instructions written in
    the book's language.
