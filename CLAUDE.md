@@ -93,7 +93,7 @@ each other and build names the M4B after the backend.
   `qwen3tts` with six designed voices in `voices/` (gitignored, regenerable
   with `ab voices-design`). 188 lines; 4 lines are `unknown` (unnamed team
   members addressing 刀老大); 5 hoofbeat sound-effect quotes were fixed to
-  narrator. Latest render: mean phonetic error 0.060, nothing flagged.
+  narrator. Latest render (batch 32): mean phonetic error 0.048, nothing flagged.
 
 Measured quality (see DESIGN.md table): Kokoro is best on English, Qwen3-TTS
 is best on Mandarin. Chatterbox hallucinates on short lines. Chinese verify

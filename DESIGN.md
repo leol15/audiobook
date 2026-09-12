@@ -301,6 +301,27 @@ reason to give up the larger model's quality.
   OOM, raise it on a bigger card). Whole-book batches fill better than the
   benchmark's, because all of a speaker's lines form one group.
 
+**Quality check.** Mean pinyin error on the same 20 lines, whisper `small`:
+
+| Config | x realtime | mean error | flagged |
+|---|---|---|---|
+| 1.7B sdpa batch 1 (old default) | 0.43 | 0.075 | 0 |
+| 1.7B sdpa batch 8 | 1.58 | 0.068 | 0 |
+| 1.7B sdpa batch 20 | 2.71 | 0.083 | 1 |
+| 1.7B flash-attn batch 1 | 0.35 | 0.058 | 0 |
+| 1.7B flash-attn batch 20 | 2.65 | 0.107 | 1 |
+| 0.6B sdpa batch 1 | 0.40 | 0.085 | 0 |
+| 0.6B sdpa batch 16 | 1.83 | 0.075 | 0 |
+| 1.7B sdpa batch 40 (40 lines) | 5.57 | 0.082 | 1 |
+
+The spread is sampling noise on a few four-character lines (林风一摸 heard
+as 凌峰隐摸 on one draw, clean on the next), not a batching effect: the
+whole book confirms it. Re-rendering all 188 lines of `books/small-chinese`
+with the new default (batch 32, 11 model calls) took 3.5 minutes for 13.7
+minutes of audiobook where it used to take about 35, and `ab verify`
+reports mean error 0.048 with nothing flagged after its usual re-render
+pass, against 0.060 for the one-line-at-a-time render it replaced.
+
 ### 6. verify
 
 Autoregressive TTS skips sentences, repeats phrases, and invents words, and
