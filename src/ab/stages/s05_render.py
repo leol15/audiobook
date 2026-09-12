@@ -41,10 +41,20 @@ def run(paths: BookPaths, cfg: BookConfig, force: bool = False, chapters: set[in
             close()
 
 
+def voice_fingerprint(paths: BookPaths, voices: dict[str, str]) -> dict[str, str]:
+    """role -> voice id, with reference clips identified by content hash as well
+    as path, so regenerating a clip re-renders the lines that used it."""
+    out = {}
+    for role, vid in voices.items():
+        clip = paths.root / vid
+        out[role] = f"{vid}#{cache.file_hash(clip)}" if clip.is_file() else vid
+    return out
+
+
 def chapter_inputs(paths: BookPaths, cfg: BookConfig, chapter: int, backend_name: str) -> dict:
     f = paths.chapter_lines(chapter)
     return {"lines": cache.file_hash(f) if f.exists() else "", "backend": backend_name,
-            "voices": cache.content_hash(cfg.voice_map(cfg.tts.backend)),
+            "voices": cache.content_hash(voice_fingerprint(paths, cfg.voice_map(cfg.tts.backend))),
             "params": cache.content_hash(cfg.tts.params)}
 
 
@@ -69,6 +79,7 @@ def _run(paths: BookPaths, cfg: BookConfig, backend, force: bool, chapters: set[
         raise SystemExit(f"backend {backend.name} does not support language {cfg.language!r}")
     paths.audio.mkdir(parents=True, exist_ok=True)
     voices = cfg.voice_map(cfg.tts.backend)
+    fingerprints = voice_fingerprint(paths, voices)
     batch_size = cfg.tts.batch or getattr(backend, "batch_size", 1)
     if batch_size > 1 and not hasattr(backend, "synthesize_batch"):
         batch_size = 1
@@ -89,12 +100,13 @@ def _run(paths: BookPaths, cfg: BookConfig, backend, force: bool, chapters: set[
             if st:
                 ln.audio, ln.backend, ln.attempts = st.audio, st.backend, st.attempts
             voice = resolve_voice(voices, ln.speaker)
+            voice_key = resolve_voice(fingerprints, ln.speaker)  # cache identity (clip hash aware)
             if (paths.root / voice).is_file():
                 voice = str((paths.root / voice).resolve())  # reference clip, not a preset id
-            out = _expected(paths, backend.name, voice, cfg.tts.params, ln)
+            out = _expected(paths, backend.name, voice_key, cfg.tts.params, ln)
             if ln.audio is not None and ln.audio != str(out.relative_to(paths.work)):
                 ln.attempts = 0  # text, voice, or backend changed: start the seed sequence over
-                out = _expected(paths, backend.name, voice, cfg.tts.params, ln)
+                out = _expected(paths, backend.name, voice_key, cfg.tts.params, ln)
             params = {**cfg.tts.params, "seed": ln.attempts}
             if not force and ln.audio == str(out.relative_to(paths.work)) and out.exists():
                 jobs.append(_Job(ln, ci, voice, params, out, None))

@@ -54,6 +54,7 @@ def run(paths: BookPaths, cfg: BookConfig, force: bool = False, backend_name: st
             txt = wav.with_suffix(".txt")
             text = samples.get(role) or _SAMPLE[lang]
             if force or not wav.exists():
+                # TODO: can this be parallelised?
                 backend.design(text, lang=lang, instruct=description, out=str(wav))
                 txt.write_text(text, encoding="utf-8")
             voice_map[role] = f"voices/{slug}.wav"
@@ -69,18 +70,20 @@ def run(paths: BookPaths, cfg: BookConfig, force: bool = False, backend_name: st
 
 def _sample_text(paths: BookPaths, lang: str) -> dict[str, str]:
     """A short passage per role from the book itself, so the designed voice is
-    heard saying words the character actually says."""
+    heard saying words the character actually says. Kept to whole lines and
+    under _MAX_CHARS: the Base model clones best from 5-15 s of reference
+    audio, and a clip cut mid-sentence (or 30 s long) makes the clone loop."""
     out: dict[str, str] = {}
     joiner = "" if lang == "zh" else " "
+    limit = _MAX_CHARS[lang]
     for ln in read_lines(paths):
         cur = out.get(ln.speaker, "")
-        if len(cur) >= _MAX_CHARS[lang]:
-            continue
         piece = ln.text.strip()
-        if len(piece) < 4:
+        if len(piece) < 4 or len(piece) > limit:
             continue
-        cand = f"{cur}{joiner}{piece}" if cur else piece
-        out[ln.speaker] = cand[: _MAX_CHARS[lang] * 2]
+        if cur and len(cur) + len(joiner) + len(piece) > limit:
+            continue
+        out[ln.speaker] = f"{cur}{joiner}{piece}" if cur else piece
     return {k: v for k, v in out.items() if len(v) >= 12}
 
 
