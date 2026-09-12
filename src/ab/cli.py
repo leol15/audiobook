@@ -218,3 +218,23 @@ def play(book: Path = typer.Argument(...), line_id: str = typer.Argument(...)):
     if not p.exists():
         raise SystemExit(f"no audio for {line_id}; rendered lines are listed in {paths.audio_by_line}")
     print(str(p.resolve()))
+
+
+@app.command()
+def new(
+    book: Path = typer.Argument(..., help="Directory to create, e.g. books/my-novel"),
+    source: Path = typer.Option(..., "--source", "-s", help="Text or Markdown file to copy in"),
+    language: str = typer.Option("en", "--language", "-l", help="en | zh"),
+    title: str | None = typer.Option(None, help="Defaults to the directory name"),
+    author: str = typer.Option("", help="Author for the M4B tags"),
+    chapter_regex: str | None = typer.Option(None, help="Regex for chapter heading lines"),
+    backend: str = typer.Option("kokoro", help="Default tts.backend"),
+):
+    """Scaffold a book: copy the source, write a commented book.yaml, run ingest."""
+    from ab.newbook import create, ingest_preview
+
+    if language not in ("en", "zh"):
+        raise SystemExit("language must be en or zh")
+    paths = create(book, source=source, language=language, title=title, author=author,
+                   chapter_regex=chapter_regex, backend=backend)
+    ingest_preview(paths)

@@ -13,8 +13,17 @@ Each stage is also a command (`uv run ab ingest books/sample`), and
 `ab run --force render` re-runs from that stage onward. `ab voices` lists
 voice ids; `ab llm-check` confirms the Windows Ollama is reachable.
 
-To narrate your own book: copy `books/sample`, replace `source.txt`
-(or `source.md`), and edit `book.yaml`.
+To narrate your own book:
+
+```bash
+uv run ab new books/my-novel --source ~/my-novel.txt --language en --author "Jane Austen"
+#   -> copies the source, writes a fully commented book.yaml, runs ingest and
+#      prints the chapters it found (set --chapter-regex if that looks wrong)
+uv run ab cast books/my-novel            # discover characters (needs Ollama)
+uv run ab voices-assign books/my-novel   # pick a Kokoro/preset voice per character from the descriptions
+uv run ab check books/my-novel           # voices <-> cast consistency (also runs before every `ab run`)
+uv run ab run books/my-novel
+```
 
 ## Second backend and verification (milestone 3)
 
