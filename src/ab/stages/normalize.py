@@ -52,7 +52,9 @@ def _normalize_zh(text: str) -> str:
     text = re.sub(r"(\d{4})年", lambda m: "".join(_ZH_DIGITS[int(c)] for c in m.group(1)) + "年", text)
     # Other integers: read as a number. Small implementation, good enough for v1.
     text = re.sub(r"\d+", lambda m: _zh_number(int(m.group(0))), text)
-    text = text.replace("——", "，").replace("…", "，")
+    # Ellipses (…, ……, ．．．, ...) and dashes become a comma pause.
+    text = re.sub(r"(?:…+|\.{2,}|——+|—)", "，", text)
+    text = re.sub(r"，{2,}", "，", text)
     return text.strip()
 
 

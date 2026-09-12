@@ -89,9 +89,12 @@ def extract(paragraphs: list[str], lang: str, resolve) -> list[ParaSpans]:
             before = text[pos:m.start()].strip()
             if before:
                 ps.spans.append(Span("narration", before, "narrator", 1.0))
-            qid += 1
             inner = m.group(1).strip()
-            if inner:
+            if _is_scare_quote(inner, lang):
+                # A quoted term inside narration ("the so-called \"Ghost\""), not speech.
+                ps.spans.append(Span("narration", inner, "narrator", 1.0))
+            elif inner:
+                qid += 1
                 ps.spans.append(Span("dialogue", inner, quote_id=qid))
             pos = m.end()
         tail = text[pos:]
@@ -109,6 +112,16 @@ def extract(paragraphs: list[str], lang: str, resolve) -> list[ParaSpans]:
         out.append(ps)
     _propagate_continuations(out)
     return out
+
+
+_SENT_PUNCT = re.compile(r"[.!?,;:。！？，；：…]")
+
+
+def _is_scare_quote(inner: str, lang: str) -> bool:
+    """Short quoted term with no sentence punctuation: a name or concept, not dialogue."""
+    if not inner or _SENT_PUNCT.search(inner):
+        return False
+    return len(inner) <= 4 if lang == "zh" else len(inner.split()) <= 2
 
 
 def _attribute_rules(ps: ParaSpans, lang: str, resolve) -> None:

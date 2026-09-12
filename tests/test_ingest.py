@@ -54,3 +54,11 @@ def test_normalize_zh_numbers():
     assert _zh_number(105) == "一百零五"
     assert _zh_number(20000) == "二万"
     assert _zh_number(12345) == "一万二千三百四十五"
+
+
+def test_zh_ellipsis_and_fullwidth_period():
+    from ab.stages.ingest import parse
+    chs = parse("001 标题\n\n“这还算好的．．．要是失控了。”\n\n“．．．．．”\n", "zh", r"^\d{3}\s+\S.*$", is_markdown=False)
+    assert chs[0].title == "001 标题"
+    assert normalize(chs[0].paragraphs[0], "zh") == '"这还算好的，要是失控了。"'
+    assert normalize(chs[0].paragraphs[1], "zh") == '"，"'

@@ -19,7 +19,7 @@ _GUTENBERG_START = re.compile(r"^\*\*\* ?START OF (THE|THIS) PROJECT GUTENBERG",
 _GUTENBERG_END = re.compile(r"^\*\*\* ?END OF (THE|THIS) PROJECT GUTENBERG", re.IGNORECASE)
 
 # Full-width punctuation that the segmenter and TTS handle better in canonical form.
-_ZH_PUNCT = str.maketrans({"　": " ", "﹁": '"', "﹂": '"'})
+_ZH_PUNCT = str.maketrans({"　": " ", "﹁": '"', "﹂": '"', "．": "."})  # full-width period -> ASCII
 
 
 def run(paths: BookPaths, cfg: BookConfig, force: bool = False):

@@ -58,6 +58,9 @@ _PROMPT = {
         "{passage}\n\n返回每个 (?) 对话的说话人和 0 到 1 的置信度。"
     ),
 }
+import re
+
+_HAS_WORD = re.compile(r"\w")
 WINDOW = 12   # paragraphs per LLM call
 CONTEXT = 4   # preceding paragraphs shown for context
 
@@ -87,6 +90,8 @@ def run(paths: BookPaths, cfg: BookConfig, force: bool = False):
             _llm_fill(paras, cast, cfg.language, llm, stats)
         for ps in paras:
             for si, sp in enumerate(ps.spans):
+                if not _HAS_WORD.search(sp.text):
+                    continue  # punctuation-only span such as a quoted "……"
                 lid = f"c{ch.index:03d}p{ps.para:04d}s{si:02d}"
                 if lid in locked and locked[lid].text == sp.text:
                     lines.append(locked[lid])

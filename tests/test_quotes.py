@@ -56,3 +56,12 @@ def test_resolve_is_tolerant():
     assert CAST.resolve("LIZZY") == "Elizabeth"
     assert CAST.resolve("Bingley") is None
     assert CAST.resolve("") is None
+
+
+def test_scare_quotes_are_narration():
+    zh = extract(['他们把这种东西叫做"善灵"，很少见。'], "zh", CAST.resolve)
+    en = extract(['The so-called "Ghost" appeared.', '"Bingley."'], "en", CAST.resolve)
+    kinds = [(k, t) for k, t, s in flat(zh) + flat(en)]
+    assert ("narration", "善灵") in kinds
+    assert ("narration", "Ghost") in kinds
+    assert ("dialogue", "Bingley.") in kinds  # terminal punctuation keeps it dialogue
