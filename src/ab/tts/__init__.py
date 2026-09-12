@@ -9,6 +9,7 @@ from ab.tts.base import TTSBackend
 _REGISTRY = {
     "kokoro": "ab.tts.kokoro:KokoroBackend",
     "chatterbox": "ab.tts.chatterbox:ChatterboxBackend",
+    "qwen3tts": "ab.tts.qwen3tts:Qwen3TTSBackend",
     "subprocess": "ab.tts.subprocess:SubprocessBackend",
     "tone": "ab.tts.tone:ToneBackend",
 }

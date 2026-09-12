@@ -40,3 +40,21 @@ in `book.yaml` under `voices:` exactly like Kokoro voice ids. Params under
 
 `work/verify.review.txt` lists lines still above the error threshold after
 re-rendering; `work/llm.jsonl` logs every LLM exchange for debugging.
+
+## Qwen3-TTS backend
+
+Apache 2.0, strong Mandarin, preset speakers or reference-clip cloning.
+Same subprocess pattern as Chatterbox:
+
+```bash
+cd backends/qwen3tts && uv sync && cd ../..
+uv run ab render books/small-chinese --tts qwen3tts   # first run downloads ~4 GB of weights
+uv run ab verify books/small-chinese
+uv run ab build  books/small-chinese                  # -> out/<title>.qwen3tts-1.7B.m4b
+```
+
+Voice ids are preset names (`Vivian`, `Serena`, `Uncle_Fu`, `Dylan`, `Eric`
+for Mandarin; `Ryan`, `Aiden` for English) or a path to a reference wav.
+A `.txt` next to the wav with its transcript improves cloning. Params under
+`tts.params`: `size` (`1.7B` default, `0.6B` for speed), `instruct` (style
+text for presets, e.g. `"calm, low voice"`), `seed`.

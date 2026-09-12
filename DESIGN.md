@@ -176,7 +176,7 @@ class TTSBackend(Protocol):
 |---|---|---|---|
 | **Kokoro-82M** (default) | 82M | Apache 2.0 | ~100x realtime on this GPU, 50+ English voices plus 8 Mandarin voices (`zf_*`, `zm_*`), very stable. English cast coverage is ample; the Chinese cast is limited to 8 distinct voices. Needs `misaki[zh]` for the Chinese G2P. |
 | Chatterbox Multilingual | ~500M | MIT | Reference-audio cloning (unlimited distinct voices), an `exaggeration` knob for emotion, and Mandarin support. Roughly realtime. The "large model" to experiment against. |
-| Qwen3-TTS | 0.6–1.7B | Apache 2.0 | Strongest Chinese quality of the free models, with cloning and voice design from a text description. First candidate to add if Kokoro's Mandarin voices feel flat. |
+| Qwen3-TTS | 0.6–1.7B | Apache 2.0 | Strongest Chinese quality of the free models. Three variants: CustomVoice (9 preset speakers, 5 Mandarin, plus a style instruction), Base (clone from a reference clip), VoiceDesign (voice from a text description). Runs in `backends/qwen3tts` through the subprocess backend; the worker loads variants lazily since each is ~4 GB VRAM. Autoregressive, so verify stays on. |
 | Orpheus 3B / F5-TTS | 1–3B | varies | English-only or weaker Chinese; add only for comparison. F5's weights are non-commercial, fine for a hobby. |
 | tone (test) | none | n/a | Emits a sine tone sized to the text. Exercises render, cache, pauses, and ffmpeg assembly in tests without any model or GPU. |
 
@@ -292,7 +292,15 @@ unchanged. `ab run --force attribute` invalidates from that stage onward.
    never skips or repeats text, so verification only earns its cost once an
    autoregressive model (Chatterbox, Qwen3-TTS, Orpheus) is in the mix. Use
    it to A/B a chapter between backends with a measured error rate.
-5. Later, if wanted: emotion/style tags, EPUB ingest, per-line language
+4. **Qwen3-TTS, part one.** Clone/preset backend behind the subprocess
+   protocol, A/B against Kokoro on the Chinese book with verify on.
+5. **Qwen3-TTS, part two: voice design.** An `ab voices-design` command
+   turns each cast description into a ten-second reference clip with the
+   VoiceDesign model, saved under the book's `voices/` directory. Rendering
+   then clones that clip with the Base model so a character sounds the same
+   across the whole book. This removes the eight-voice cap on Mandarin
+   without recording anything.
+6. Later, if wanted: emotion/style tags, EPUB ingest, per-line language
    switching for mixed books, a small review web UI for fixing attributions
    while listening.
 

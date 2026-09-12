@@ -1,0 +1,13 @@
+[project]
+name = "ab-qwen3tts-worker"
+version = "0.1.0"
+description = "Qwen3-TTS worker for the ab subprocess backend (separate venv)"
+requires-python = ">=3.12,<3.13"
+dependencies = ["qwen-tts", "torch>=2.7", "torchaudio>=2.7", "soundfile", "numpy"]
+
+[tool.uv]
+index = [{ name = "pytorch-cu128", url = "https://download.pytorch.org/whl/cu128", explicit = true }]
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
+torchaudio = { index = "pytorch-cu128" }

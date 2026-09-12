@@ -6,9 +6,17 @@ tts:
   backend: kokoro
   params: { speed: 1.0 }
 voices:
-  narrator: zm_yunyang
-  林风: zm_yunxi
-  未知角色1: zf_xiaobei
-  未知角色2: zm_yunjian
-  未知角色3: zf_xiaoni
-  _default: zf_xiaoxiao
+  kokoro:
+    narrator: zm_yunyang
+    林风: zm_yunxi
+    未知角色1: zf_xiaobei
+    未知角色2: zm_yunjian
+    未知角色3: zf_xiaoni
+    _default: zf_xiaoxiao
+  qwen3tts:
+    narrator: Uncle_Fu
+    林风: Dylan
+    未知角色1: Serena
+    未知角色2: Eric
+    未知角色3: Vivian
+    _default: Vivian
