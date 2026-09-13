@@ -20,7 +20,7 @@ PRESETS = ["Vivian", "Serena", "Uncle_Fu", "Dylan", "Eric", "Ryan", "Aiden", "On
 
 
 class Qwen3TTSBackend(SubprocessBackend):
-    batch_size = 32  # ~7 GB peak on the 40-line bench; see DESIGN.md "Qwen3-TTS throughput"
+    batch_size = 24  # line-count ceiling; tts.batch_tokens (memory) usually cuts first. See DESIGN.md
 
     def __init__(self, size: str = "1.7B", **params):
         super().__init__(

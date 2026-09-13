@@ -137,7 +137,7 @@ compares toneless pinyin (whisper emits traditional script and homophones).
 6. `report._backend_name()` hardcodes registry→backend.name; keep in sync.
 7. Symptom "GPU 100%, VRAM full, no new wavs for many minutes" during a
    Qwen3-TTS render = a runaway batch. The worker caps tokens by text length
-   now and batches are cut by `tts.batch_tokens` (default 16000) as well as
+   now and batches are cut by `tts.batch_tokens` (default 8000) as well as
    `tts.batch`; if it recurs, lower `batch_tokens` and check `nvidia-smi`.
 
 ## Next tracks (agreed order)

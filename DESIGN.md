@@ -536,9 +536,22 @@ The cap bounds one sequence; it does not bound a batch. The second stall
 (`chapter60s`, `tts.batch: 64`) was a memory spill: 64 sorted lines of about
 100 characters generate ~20k tokens at once, while the batch-32 run that
 worked on similar lines peaked at 11 GB. Batches are now cut by
-`tts.batch_tokens` (default 16000: ~300 prompt-overhead tokens per line plus expected audio tokens, ~10 GB) as well as
+`tts.batch_tokens` (default 8000: ~300 prompt-overhead units per line plus expected audio tokens, ~9 GB) as well as
 by line count, so long lines get smaller batches automatically and `tts.batch`
 is only an upper bound.
+
+Calibration, measured on `chapter60s` (Mandarin, ~37-char lines, 13 s clips):
+
+| Batch | VRAM | GPU busy | Lines/min | ~x realtime |
+|---|---|---|---|---|
+| 16 | 7.3 GB | 17 % | 36 | 4.8 |
+| ~38 (budget 16000) | 15.8 GB, spilled | 100 % | 14 | 1.9 |
+| 64 | 15.8 GB, spilled | 100 % | stalled for 20+ min on long lines | |
+
+Memory is ~0.4 GB per line of this size, about twice the earlier 20-line
+benchmark on 15-char lines, so budgets derived from that benchmark were too
+generous. Past the spill point a bigger batch is slower, not faster; the
+default budget (8000) targets ~9 GB and the backend's line ceiling is 24.
 
 ## Debuggability
 

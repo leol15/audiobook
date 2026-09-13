@@ -24,13 +24,14 @@ class TTSConfig(BaseModel):
     # Lines per model call for backends that batch (qwen3tts). None = backend default.
     # Not part of the cache key: batching changes throughput, not the cache identity.
     batch: int | None = None
-    # Memory budget per batch, in tokens: sum over its lines of a ~300-token
-    # prompt overhead plus expected audio tokens (~12/s of speech). Batches
-    # are cut at whichever of `batch` and this fills first. Calibration on the
-    # 16 GB card: 32 lines of ~100 Mandarin chars (~19k by this measure)
-    # peaked at 11 GB; 64 short lines (~26k) spilled and crawled. 16000 keeps
-    # ~10 GB and gives ~38 short lines or ~26 long ones per call.
-    batch_tokens: int = 16000
+    # Memory budget per batch, in cost units: per line ~300 (prompt overhead)
+    # plus expected audio tokens (~12/s of speech). Batches are cut at
+    # whichever of `batch` and this fills first. Measured on the 16 GB card
+    # with ~37-char Mandarin lines (~410 units each): 16 lines (6.6k) ran at
+    # 7.3 GB and 4.8x realtime; 38 lines (15.6k) pinned VRAM at 15.8 GB and
+    # crawled at 100% utilization. Memory is ~0.4 GB per line of that size.
+    # 8000 keeps ~9 GB: ~19 such lines, ~13 lines of 100 chars.
+    batch_tokens: int = 8000
 
 
 class LLMConfig(BaseModel):
