@@ -18,9 +18,15 @@ _EN_ABBREV = {
 _ZH_DIGITS = "零一二三四五六七八九"
 
 
+# Bump when the normalization rules change, so cached output is redone.
+# (The stamp otherwise only sees the input text, language, and overrides.)
+RULES_VERSION = 2
+
+
 def inputs(paths: BookPaths, cfg: BookConfig) -> dict:
     return {"chapters": cache.file_hash(paths.chapters) if paths.chapters.exists() else "",
-            "language": cfg.language, "overrides": cache.content_hash(paths.load_overrides())}
+            "language": cfg.language, "overrides": cache.content_hash(paths.load_overrides()),
+            "rules": RULES_VERSION}
 
 
 def run(paths: BookPaths, cfg: BookConfig, force: bool = False):

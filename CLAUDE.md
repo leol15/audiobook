@@ -159,6 +159,9 @@ See SOP.md for the operator procedure.
 Backlog from DESIGN.md: emotion/style tags, EPUB ingest, mixed-language
 books, review UI.
 
+When you change ingest or normalize rules, bump `RULES_VERSION` in that
+stage; otherwise cached books keep the old output (the stamp only hashes inputs).
+
 ## Working agreements
 
 - Keep `DESIGN.md` and `README.md` updated in the same commit as the change.

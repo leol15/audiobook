@@ -23,9 +23,12 @@ _GUTENBERG_END = re.compile(r"^\*\*\* ?END OF (THE|THIS) PROJECT GUTENBERG", re.
 _ZH_PUNCT = str.maketrans({"　": " ", "﹁": '"', "﹂": '"', "．": "."})  # full-width period -> ASCII
 
 
+RULES_VERSION = 1  # bump when parsing/cleanup rules change
+
+
 def inputs(paths: BookPaths, cfg: BookConfig) -> dict:
     return {"source": cache.file_hash(paths.source), "language": cfg.language,
-            "chapter_regex": cfg.chapter_regex or ""}
+            "chapter_regex": cfg.chapter_regex or "", "rules": RULES_VERSION}
 
 
 def run(paths: BookPaths, cfg: BookConfig, force: bool = False):
