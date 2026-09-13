@@ -80,8 +80,26 @@ def chapter_status(paths: BookPaths, cfg: BookConfig) -> list[dict]:
     fill("verify", verify.chapter_states(paths, cfg))
     fill("build", build.chapter_states(paths, cfg))
     for i in chapter_indexes(paths):
-        if i in rows:
-            rows[i]["lines"] = len(read_chapter(paths, i))
+        if i not in rows:
+            continue
+        lines = read_chapter(paths, i)
+        rows[i]["lines"] = len(lines)
+        # Progress counts: render state is checkpointed during a run, so a
+        # stale chapter shows how far it is rather than only why it is stale.
+        st = render.read_render(paths, i) if paths.chapter_render(i).exists() else {}
+        done = sum(1 for ln in lines
+                   if st.get(ln.id) and st[ln.id].audio and (paths.work / st[ln.id].audio).exists())
+        rows[i]["render_progress"] = f"{done}/{len(lines)}"
+        if rows[i].get("render") != "fresh":
+            rows[i]["render_detail"] = f"{done}/{len(lines)}" + (
+                f" · {rows[i]['render_detail']}" if rows[i].get("render_detail") else "")
+        vf = paths.chapter_verify(i)
+        if vf.exists():
+            checked = sum(1 for raw in vf.read_text(encoding="utf-8").splitlines() if raw.strip())
+            rows[i]["verify_progress"] = f"{checked}/{len(lines)}"
+            if rows[i].get("verify") != "fresh":
+                rows[i]["verify_detail"] = f"{checked}/{len(lines)}" + (
+                    f" · {rows[i]['verify_detail']}" if rows[i].get("verify_detail") else "")
     for r in rows.values():
         for stage in ("attribute", "render", "verify", "build"):
             r.setdefault(stage, "missing")

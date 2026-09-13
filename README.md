@@ -139,6 +139,7 @@ regenerate just that one.
 
 ```bash
 uv run ab status books/x            # each stage: fresh / stale (and which input changed) / missing
+uv run ab status books/x --chapters # per chapter, with render and verify progress as done/total (updates every 60 s during a run)
 uv run ab report books/x            # writes work/REPORT.md: stage table, speakers, lines to review, log tail
 uv run ab fix books/x c000p0012s00 --speaker "Mrs. Bennet"   # correct + lock a line; render redoes it
 uv run ab play books/x c000p0012s00 # path of that line's audio
