@@ -113,7 +113,10 @@ def run(paths: BookPaths, cfg: BookConfig, force: bool = False, chapters: set[in
                 "Listen (05-audio/by-line/<id>.wav) and fix by hand.\n")
         for lid, rate in bad.items():
             f.write(f"{lid}\t{rate:.2f}\t{lines[lid].text[:100] if lid in lines else ''}\n")
-    rates = [vr.error_rate for i in chapter_indexes(paths) for vr in _current_results(paths, i).values()]
+    # Per-line rates are clamped at 1.0 for the mean: whisper's hallucinated
+    # repetitions on 2 s sound-effect clips score 36+ and would swamp the book.
+    rates = [min(vr.error_rate, 1.0)
+             for i in chapter_indexes(paths) for vr in _current_results(paths, i).values()]
     mean = sum(rates) / len(rates) if rates else 0.0
     note(paths, f"verify[{model_name}]: {checked} lines transcribed this run, {len(rates)} with a "
          f"current result, mean error {mean:.3f}, {len(bad)} above threshold")
