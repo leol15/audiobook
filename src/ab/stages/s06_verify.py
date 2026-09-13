@@ -164,12 +164,33 @@ def _check_batch(models, paths: BookPaths, items: list[tuple[str, str]], cfg: Bo
     out = []
     for (text, _), transcript, dur in zip(items, transcripts, durations):
         rate, edits = error_rate(text, transcript or "", cfg.language, with_edits=True)
-        # A single misheard word on a 3-word line is a 33% "error"; tolerate one
-        # edit on short lines so whisper's own mistakes do not trigger re-renders.
-        ok = rate <= cfg.verify.threshold or edits <= 1
+        ok = judge(text, transcript or "", rate, edits, dur, cfg)
         out.append(VerifyResult(id="", transcript=transcript or "", error_rate=rate, edits=edits,
                                 duration=dur, ok=ok))
     return out
+
+
+_CHARS_PER_S = {"zh": 4.0, "en": 15.0}
+
+
+def judge(text: str, transcript: str, rate: float, edits: int, dur: float, cfg: BookConfig) -> bool:
+    """Is this line's audio acceptable?
+
+    - A runaway (audio far longer than the text could take) always fails.
+    - Very short texts (sound effects: 哒哒, 嘶, 嗷嗷) are judged by duration
+      only: whisper hallucinates long repetitions on a correct 2 s clip of a
+      repeated syllable, so its transcript says nothing about the audio.
+    - Otherwise the phonetic error rate applies, tolerating one edit so a
+      single misheard word on a short line does not trigger a re-render.
+    """
+    expected = len(text) / _CHARS_PER_S.get(cfg.language, 8.0)
+    runaway = dur > 3 * expected + 3
+    if runaway:
+        return False
+    toks = _tokens(text, cfg.language)
+    if len(toks) <= 4 or len(set(toks)) <= 2:  # a few syllables, or one repeated (哒哒哒哒)
+        return True
+    return rate <= cfg.verify.threshold or edits <= 1
 
 
 def concat_clips(audios: list[np.ndarray], sr: int) -> tuple[np.ndarray, list[dict]]:

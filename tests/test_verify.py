@@ -36,3 +36,18 @@ def test_concat_clips_and_segment_mapping():
             SimpleNamespace(start=2.4, text=" b2"), SimpleNamespace(start=4.0, text=" c")]
     assert segments_to_clips(segs, clips, "en") == ["a", "b1 b2", "c"]
     assert segments_to_clips([SimpleNamespace(start=1.5, text="乙")], clips, "zh") == ["", "乙", ""]
+
+
+def test_judge_short_lines_by_duration_and_runaways():
+    from ab.config import BookConfig
+    from ab.stages.s06_verify import judge
+
+    cfg = BookConfig(title="t", language="zh")
+    # correct 3 s clip of a repeated syllable, whisper hallucinated a wall of 打
+    assert judge("哒哒，哒哒，哒哒，", "打" * 100, 36.0, 100, 3.4, cfg)
+    # same text but 20 s of audio: runaway regardless of transcript
+    assert not judge("哒哒，哒哒，哒哒，", "哒哒哒哒哒哒", 0.0, 0, 20.0, cfg)
+    # normal line: phonetic rate applies
+    text = "夜色悄悄笼罩了小镇，窗户里的灯光一盏一盏地亮了起来，街上没有一个人。"
+    assert not judge(text, "完全不同的句子完全不同的句子完全不同的句子完全不同", 1.0, 30, 8.0, cfg)
+    assert judge(text, text[:-1], 0.03, 1, 8.0, cfg)
