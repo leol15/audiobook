@@ -25,7 +25,7 @@ from ab.config import BookConfig, BookPaths
 from ab.lines import chapter_indexes, read_attribution, read_render, write_render, write_views
 from ab.log import note
 from ab.models import Line
-from ab.text import chunk_text, expected_tokens
+from ab.text import chunk_text, sequence_cost
 from ab.tts import load_backend
 
 CHECKPOINT_SECONDS = 60  # render state is flushed at least this often during a long run
@@ -190,7 +190,7 @@ def _batches(groups: dict[tuple, list[_Job]], batch_size: int, batch_tokens: int
         batch: list = []
         tokens = 0
         for it in items:
-            t = expected_tokens(it[2], it[0].line.lang)
+            t = sequence_cost(it[2], it[0].line.lang)
             if batch and (len(batch) >= batch_size or (batch_tokens and tokens + t > batch_tokens)):
                 yield batch
                 batch, tokens = [], 0

@@ -116,8 +116,18 @@ def _split_long(sent: str, lang: str, max_chars: int) -> list[str]:
 # Rough speaking rates, used to budget batched TTS by expected audio length.
 _CHARS_PER_S = {"zh": 4.0, "en": 15.0}
 TOKENS_PER_S = 12  # Qwen3-TTS 12Hz codec
+# Per-sequence fixed cost in a batch: the reference-clip prompt (a 12 s clip
+# is ~150 codec tokens plus its text) and text prompt, attended by every step.
+SEQUENCE_OVERHEAD_TOKENS = 300
 
 
 def expected_tokens(text: str, lang: str) -> int:
     """Expected audio tokens for a text: seconds of speech x 12 tokens/s."""
     return int(len(text) / _CHARS_PER_S.get(lang, 8.0) * TOKENS_PER_S) + 1
+
+
+def sequence_cost(text: str, lang: str) -> int:
+    """What one line costs in a batch, for memory budgeting: prompt overhead
+    plus expected generated tokens. 64 short lines spilled 16 GB even though
+    their generated tokens summed to ~7k; the overhead is what they had in common."""
+    return SEQUENCE_OVERHEAD_TOKENS + expected_tokens(text, lang)

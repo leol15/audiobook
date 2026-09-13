@@ -536,7 +536,7 @@ The cap bounds one sequence; it does not bound a batch. The second stall
 (`chapter60s`, `tts.batch: 64`) was a memory spill: 64 sorted lines of about
 100 characters generate ~20k tokens at once, while the batch-32 run that
 worked on similar lines peaked at 11 GB. Batches are now cut by
-`tts.batch_tokens` (default 8000 expected audio tokens, ~12 GB) as well as
+`tts.batch_tokens` (default 16000: ~300 prompt-overhead tokens per line plus expected audio tokens, ~10 GB) as well as
 by line count, so long lines get smaller batches automatically and `tts.batch`
 is only an upper bound.
 
