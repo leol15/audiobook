@@ -62,3 +62,8 @@ def test_zh_ellipsis_and_fullwidth_period():
     assert chs[0].title == "001 标题"
     assert normalize(chs[0].paragraphs[0], "zh") == '"这还算好的，要是失控了。"'
     assert normalize(chs[0].paragraphs[1], "zh") == '"，"'
+
+
+def test_tildes_become_pauses():
+    assert normalize("哒哒~~哒哒~~哒哒~~", "zh") == "哒哒，哒哒，哒哒，"
+    assert normalize("la~la~ la", "en") == "la, la, la"

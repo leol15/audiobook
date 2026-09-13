@@ -47,6 +47,7 @@ def _normalize_en(text: str) -> str:
     for pat, rep in _EN_ABBREV.items():
         text = re.sub(pat, rep, text)
     text = re.sub(r"\s*[—–]\s*", ", ", text)
+    text = re.sub(r"\s*~+\s*", ", ", text)  # "la~la~" style tildes are pauses, not speech
     text = re.sub(r"\s*,\s*,", ",", text)
     text = re.sub(r"\s+", " ", text).strip()
     return text
@@ -57,8 +58,9 @@ def _normalize_zh(text: str) -> str:
     text = re.sub(r"(\d{4})年", lambda m: "".join(_ZH_DIGITS[int(c)] for c in m.group(1)) + "年", text)
     # Other integers: read as a number. Small implementation, good enough for v1.
     text = re.sub(r"\d+", lambda m: _zh_number(int(m.group(0))), text)
-    # Ellipses (…, ……, ．．．, ...) and dashes become a comma pause.
-    text = re.sub(r"(?:…+|\.{2,}|——+|—)", "，", text)
+    # Ellipses (…, ……, ．．．, ...), dashes, and tildes (哒哒~哒哒~, a drawn-out
+    # sound) become a comma pause: TTS models loop on tildes.
+    text = re.sub(r"(?:…+|\.{2,}|——+|—|[~～]+)", "，", text)
     text = re.sub(r"，{2,}", "，", text)
     return text.strip()
 
