@@ -151,8 +151,9 @@ and lists survivors in `work/06-verify.review.txt`.
 `work/05-audio` for several minutes means a runaway batch. The worker caps
 generation length by text now, so this should not recur; if it does, kill
 the run (`pkill -f "ab run books/<slug>"` from a *different* pattern than the
-shell you type it in), lower `tts.batch` in `book.yaml`, and relaunch. Nothing
-is lost: finished audio is cached.
+shell you type it in), lower `tts.batch_tokens` in `book.yaml` (default 8000;
+it bounds GPU memory, `tts.batch` is only a line-count ceiling), and relaunch.
+Nothing is lost: finished audio is cached.
 
 ## 6. Review and fix
 

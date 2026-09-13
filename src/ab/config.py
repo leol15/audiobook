@@ -24,6 +24,12 @@ class TTSConfig(BaseModel):
     # Lines per model call for backends that batch (qwen3tts). None = backend default.
     # Not part of the cache key: batching changes throughput, not the cache identity.
     batch: int | None = None
+    # Budget of expected audio tokens per batch (sum over its lines, at ~12
+    # tokens/s of speech). Batches are cut at whichever of `batch` and this
+    # fills first. GPU memory scales with lines x length, so a fixed line
+    # count spills on long lines: 32 x 100-char Mandarin lines peaked at
+    # 11 GB, 64 spilled past 16 GB and crawled. 8000 keeps ~12 GB.
+    batch_tokens: int = 8000
 
 
 class LLMConfig(BaseModel):

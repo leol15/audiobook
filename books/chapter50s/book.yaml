@@ -1,0 +1,44 @@
+title: Chapter50S
+author: Unknown
+language: zh
+chapter_regex: ^\d{3}\s+\S.*$
+tts:
+  backend: qwen3tts
+  params: {}
+voices:
+  kokoro:
+    narrator: zm_yunyang
+    _default: zm_yunyang
+  qwen3tts:
+    narrator: voices/narrator.wav
+    妍会长: voices/妍会长.wav
+    林风: voices/林风.wav
+    卓会长: voices/卓会长.wav
+    卓玲: voices/卓玲.wav
+    萱华: voices/萱华.wav
+    童童: voices/童童.wav
+    卓雨: voices/卓雨.wav
+    中年男人: voices/中年男人.wav
+    队长: voices/队长.wav
+    文斌: voices/文斌.wav
+    李博: voices/李博.wav
+    _default: voices/narrator.wav
+llm:
+  model: null
+  num_ctx: 16384
+cast:
+  main_cap: 20
+  merge_chapters: 5
+pauses:
+  sentence: 0.35
+  paragraph: 0.6
+  speaker_change: 1.2
+  chapter: 2.5
+verify:
+  threshold: 0.15
+  max_attempts: 3
+  whisper_model: null
+  batch: 16
+build:
+  chapter_format: mp3
+loudness_lufs: -18.0

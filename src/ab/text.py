@@ -111,3 +111,13 @@ def _split_long(sent: str, lang: str, max_chars: int) -> list[str]:
             if cur:
                 out.append(cur)
     return out
+
+
+# Rough speaking rates, used to budget batched TTS by expected audio length.
+_CHARS_PER_S = {"zh": 4.0, "en": 15.0}
+TOKENS_PER_S = 12  # Qwen3-TTS 12Hz codec
+
+
+def expected_tokens(text: str, lang: str) -> int:
+    """Expected audio tokens for a text: seconds of speech x 12 tokens/s."""
+    return int(len(text) / _CHARS_PER_S.get(lang, 8.0) * TOKENS_PER_S) + 1

@@ -532,6 +532,14 @@ second; about 4 Chinese or 15 English characters per second), so a runaway
 costs at most a few seconds of garbage audio, which verify then catches and
 re-renders with a new seed. `tts.params.max_new_tokens` overrides the cap.
 
+The cap bounds one sequence; it does not bound a batch. The second stall
+(`chapter60s`, `tts.batch: 64`) was a memory spill: 64 sorted lines of about
+100 characters generate ~20k tokens at once, while the batch-32 run that
+worked on similar lines peaked at 11 GB. Batches are now cut by
+`tts.batch_tokens` (default 8000 expected audio tokens, ~12 GB) as well as
+by line count, so long lines get smaller batches automatically and `tts.batch`
+is only an upper bound.
+
 ## Debuggability
 
 A long unattended render must be inspectable afterwards without re-running

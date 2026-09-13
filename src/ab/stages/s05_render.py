@@ -25,7 +25,7 @@ from ab.config import BookConfig, BookPaths
 from ab.lines import chapter_indexes, read_attribution, read_render, write_render, write_views
 from ab.log import note
 from ab.models import Line
-from ab.text import chunk_text
+from ab.text import chunk_text, expected_tokens
 from ab.tts import load_backend
 
 CHECKPOINT_SECONDS = 60  # render state is flushed at least this often during a long run
@@ -118,7 +118,7 @@ def _run(paths: BookPaths, cfg: BookConfig, backend, force: bool, chapters: set[
     groups: dict[tuple, list[_Job]] = {}
     for j in todo:
         groups.setdefault((j.voice, json.dumps(j.params, sort_keys=True)), []).append(j)
-    batches = list(_batches(groups, batch_size))
+    batches = list(_batches(groups, batch_size, cfg.tts.batch_tokens if batch_size > 1 else 0))
     for j in jobs:
         if j.chunks is None:
             _mark(paths, j, backend.name)
@@ -174,18 +174,30 @@ class _Job:
     pieces: list[np.ndarray] = field(default_factory=list)
 
 
-def _batches(groups: dict[tuple, list[_Job]], batch_size: int):
-    """Yield lists of (job, chunk index, chunk text) no longer than batch_size, one voice each.
+def _batches(groups: dict[tuple, list[_Job]], batch_size: int, batch_tokens: int = 0):
+    """Yield lists of (job, chunk index, chunk text), one voice each, cut at
+    batch_size lines or batch_tokens expected audio tokens, whichever first.
 
     Within a voice, chunks are ordered by length so a batch finishes together:
     batched generation runs until its longest sequence stops. Multi-chunk
     lines keep their chunks in order; a line's chunks may span batches.
+    The token budget is what bounds GPU memory: it scales with lines x
+    length, so a line count alone spills on batches of long lines.
     """
     for jobs in groups.values():
         items = [(j, i, c) for j in jobs for i, c in enumerate(j.chunks)]
         items.sort(key=lambda it: (len(it[2]), it[0].line.id, it[1]))
-        for k in range(0, len(items), batch_size):
-            yield items[k:k + batch_size]
+        batch: list = []
+        tokens = 0
+        for it in items:
+            t = expected_tokens(it[2], it[0].line.lang)
+            if batch and (len(batch) >= batch_size or (batch_tokens and tokens + t > batch_tokens)):
+                yield batch
+                batch, tokens = [], 0
+            batch.append(it)
+            tokens += t
+        if batch:
+            yield batch
 
 
 def _synthesize(backend, batch, batch_size: int) -> list[list[np.ndarray]]:

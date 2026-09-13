@@ -10,3 +10,4 @@ backends/*/.venv/
 # Designed reference clips are regenerable media; track them per book if you want a voice kept.
 books/*/voices/
 scrapers/*/output/
+scrapers/

@@ -109,3 +109,21 @@ def test_plain_backend_stays_single(tmp_path):
     render._run(paths, cfg, tone, force=False, chapters=None)
     assert len(calls) == 8  # 5 single-chunk lines + 3 chunks
     assert all(json.loads(l)["audio"] for l in paths.chapter_render(0).read_text().splitlines())
+
+
+def test_batches_respect_token_budget():
+    from ab.models import Line
+    from ab.stages.s05_render import _batches, _Job
+    from ab.text import expected_tokens
+
+    def job(i, text):
+        ln = Line(id=f"c000p{i:04d}s00", chapter=0, para=i, kind="narration", speaker="narrator",
+                  text=text, lang="zh")
+        return _Job(ln, 0, "v", {}, None, [text])
+
+    jobs = [job(i, "一" * 100) for i in range(20)]           # 100 zh chars ~ 301 tokens each
+    per = expected_tokens("一" * 100, "zh")
+    batches = list(_batches({("v", "{}"): jobs}, 64, batch_tokens=per * 5))
+    assert all(len(b) <= 5 for b in batches) and sum(len(b) for b in batches) == 20
+    # no budget: line count alone applies
+    assert [len(b) for b in _batches({("v", "{}"): jobs}, 8, 0)] == [8, 8, 4]
