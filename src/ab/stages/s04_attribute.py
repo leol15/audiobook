@@ -3,12 +3,15 @@
 1. Rules split each paragraph into narration/dialogue spans and resolve speech
    tags ("said X") against the cast.
 2. Unresolved quotes go to the LLM in windows, which returns speaker names for
-   quote ids only. Text never round-trips through the model.
+   quote ids only. Text never round-trips through the model. When the book
+   has `styles`, every quote in the window is also labelled with a delivery
+   style (angry, sad, ...) from that fixed set, so render can pick a
+   per-character style clip.
 3. Lines marked locked: true in an existing chapter file are preserved.
 
 Chapter-granular: 04-lines/cNNN.jsonl is stamped with the chapter text, the
-language, and the cast's names and aliases, so editing one chapter (or the
-cast) re-runs only what depends on it.
+language, the cast's names and aliases, and the style set, so editing one
+chapter (or the cast) re-runs only what depends on it.
 
 Without a cast.yaml the stage runs in narrator-only mode (milestone 1 behaviour).
 """
@@ -23,25 +26,26 @@ from ab.lines import chapter_indexes, read_attribution, read_lines, write_attrib
 from ab.log import note
 from ab.models import Chapter, ChapterList, Line
 from ab.quotes import ParaSpans, extract
+from ab.styles import GLOSS, NEUTRAL
 
-_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "speakers": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "quote_id": {"type": "integer"},
-                    "speaker": {"type": "string"},
-                    "confidence": {"type": "number"},
-                },
-                "required": ["quote_id", "speaker", "confidence"],
-            },
-        }
-    },
-    "required": ["speakers"],
-}
+
+def _schema(styles: list[str]) -> dict:
+    item = {
+        "type": "object",
+        "properties": {
+            "quote_id": {"type": "integer"},
+            "speaker": {"type": "string"},
+            "confidence": {"type": "number"},
+        },
+        "required": ["quote_id", "speaker", "confidence"],
+    }
+    if styles:
+        item["properties"]["style"] = {"type": "string", "enum": [NEUTRAL, *styles]}
+        item["required"].append("style")
+    return {"type": "object", "properties": {"speakers": {"type": "array", "items": item}},
+            "required": ["speakers"]}
+
+
 _SYSTEM = {
     "en": "You attribute dialogue in fiction to speakers for audiobook narration. Answer only with JSON.",
     "zh": "你为有声书朗读判断小说中每句对话的说话人。只用JSON回答。",
@@ -52,14 +56,21 @@ _PROMPT = {
         "Passage. Quotes are marked [q<id>]. Some already have a known speaker in "
         "parentheses; determine the speaker of every quote marked (?). Consider who is "
         "present, alternation between speakers in a conversation, and who is being addressed.\n\n"
-        "{passage}\n\nReturn the speaker of each (?) quote with a confidence from 0 to 1."
+        "{passage}\n\nReturn the speaker of each (?) quote with a confidence from 0 to 1.{styles}"
     ),
     "zh": (
         "角色表（只能使用这些名字；都不合适时用 \"unknown\"）：\n{cast}\n\n"
         "段落。对话用 [q<id>] 标记。有些已在括号中给出说话人；请判断每个标记为 (?) 的对话的说话人。"
         "考虑在场的人物、对话中的轮流发言、以及被称呼的对象。\n\n"
-        "{passage}\n\n返回每个 (?) 对话的说话人和 0 到 1 的置信度。"
+        "{passage}\n\n返回每个 (?) 对话的说话人和 0 到 1 的置信度。{styles}"
     ),
+}
+_STYLES = {
+    "en": (" Also return EVERY quote (including those with a known speaker, repeating that "
+           "name) with its delivery style, one of: {labels}. Use \"neutral\" unless the words "
+           "or the surrounding narration clearly call for another."),
+    "zh": ("另外，返回每一句对话（包括已知说话人的，照抄该名字）的语气风格，只能是以下之一："
+           "{labels}。除非台词或上下文明显表明，否则用 \"neutral\"。"),
 }
 import re
 
@@ -75,7 +86,7 @@ def cast_hash(cast: Cast) -> str:
 
 def chapter_inputs(ch: Chapter, cfg: BookConfig, cast_key: str) -> dict:
     return {"chapter": cache.content_hash(ch.title, ch.paragraphs), "language": cfg.language,
-            "cast": cast_key}
+            "cast": cast_key, "styles": ",".join(cfg.styles)}
 
 
 def chapter_states(paths: BookPaths, cfg: BookConfig) -> list[tuple[int, list[str]]]:
@@ -103,7 +114,7 @@ def run(paths: BookPaths, cfg: BookConfig, force: bool = False, chapters: set[in
     if not todo:
         return paths.lines_dir
 
-    stats = {"narration": 0, "rules": 0, "llm": 0, "unknown": 0, "locked": 0}
+    stats = {"narration": 0, "rules": 0, "llm": 0, "unknown": 0, "locked": 0, "styled": 0}
     llm = None
     if cast.characters:
         from ab.llm import Ollama
@@ -122,7 +133,8 @@ def run(paths: BookPaths, cfg: BookConfig, force: bool = False, chapters: set[in
     dialogue = sum(1 for ln in all_lines if ln.kind == "dialogue")
     note(paths, f"attribute: {len(todo)}/{len(book.chapters)} chapters run; {stats['narration']} "
          f"narration, {dialogue} dialogue in book ({stats['rules']} by rules, {stats['llm']} by LLM, "
-         f"{stats['unknown']} unknown, {stats['locked']} locked in re-run chapters)")
+         f"{stats['unknown']} unknown, {stats['locked']} locked in re-run chapters"
+         + (f"; {stats['styled']} styled" if cfg.styles else "") + ")")
     return paths.lines_dir
 
 
@@ -132,7 +144,8 @@ def attribute_chapter(ch: Chapter, cast: Cast, cfg: BookConfig, llm, stats: dict
         paras = [ParaSpans(para=i, spans=[_narr(p)]) for i, p in enumerate(ch.paragraphs)]
     else:
         paras = extract(ch.paragraphs, cfg.language, cast.resolve)
-        _llm_fill(paras, cast, cfg.language, llm, stats, names=cast.names_for_chapter(ch.index))
+        _llm_fill(paras, cast, cfg.language, llm, stats, names=cast.names_for_chapter(ch.index),
+                  styles=cfg.styles)
     lines: list[Line] = []
     for ps in paras:
         for si, sp in enumerate(ps.spans):
@@ -150,7 +163,7 @@ def attribute_chapter(ch: Chapter, cast: Cast, cfg: BookConfig, llm, stats: dict
                 stats["rules"] += 1
             lines.append(Line(id=lid, chapter=ch.index, para=ps.para, kind=sp.kind,
                               speaker=speaker, text=sp.text, lang=cfg.language,
-                              confidence=sp.confidence))
+                              style=sp.style, confidence=sp.confidence))
     return lines
 
 
@@ -160,26 +173,38 @@ def _narr(text: str):
 
 
 def _llm_fill(paras: list[ParaSpans], cast: Cast, lang: str, llm, stats: dict,
-              names: list[str] | None = None) -> None:
-    """Ask the LLM for the speakers the rules left open. The prompt lists only
-    `names` (main cast plus this chapter's characters; default all), but the
-    answer is resolved against the whole cast."""
+              names: list[str] | None = None, styles: list[str] | None = None) -> None:
+    """Ask the LLM for the speakers the rules left open, and (with `styles`) a
+    delivery style for every quote. The prompt lists only `names` (main cast
+    plus this chapter's characters; default all), but the answer is resolved
+    against the whole cast."""
     names = list(cast.characters) if names is None else names
+    styles = styles or []
     cast_txt = "\n".join(f"- {n}" + (f" ({', '.join(cast.characters[n].aliases)})"
                                     if cast.characters[n].aliases else "") for n in names)
-    for start, end in windows(paras, llm, _PROMPT[lang].format(cast=cast_txt, passage="")
-                              + _SYSTEM[lang]):
+    style_txt = ""
+    if styles:
+        gloss = GLOSS.get(lang, GLOSS["en"])
+        labels = ", ".join([NEUTRAL] + [f"{s} ({gloss[s]})" if s in gloss else s for s in styles])
+        style_txt = _STYLES[lang].format(labels=labels)
+    schema = _schema(styles)
+    prompt = _PROMPT[lang].replace("{styles}", style_txt)
+    for start, end in windows(paras, llm, prompt.format(cast=cast_txt, passage="") + _SYSTEM[lang]):
         window = paras[start:end]
-        pending = {sp.quote_id: sp for ps in window for sp in ps.spans
-                   if sp.kind == "dialogue" and not sp.speaker}
-        if not pending:
+        quotes = {sp.quote_id: sp for ps in window for sp in ps.spans if sp.kind == "dialogue"}
+        pending = {qid: sp for qid, sp in quotes.items() if not sp.speaker}
+        if not pending and not (styles and quotes):
             continue
         ctx = paras[max(0, start - CONTEXT) : start]
         passage = "\n\n".join(_render_para(ps) for ps in ctx + window)
-        res = llm.json(_PROMPT[lang].format(cast=cast_txt, passage=passage), _SCHEMA,
-                       system=_SYSTEM[lang])
+        res = llm.json(prompt.format(cast=cast_txt, passage=passage), schema, system=_SYSTEM[lang])
         for item in res.get("speakers", []):
-            sp = pending.get(item.get("quote_id"))
+            qid = item.get("quote_id")
+            style = item.get("style")
+            if qid in quotes and style in styles:
+                quotes[qid].style = style
+                stats["styled"] += 1
+            sp = pending.get(qid)
             if sp is None:
                 continue
             canon = cast.resolve(str(item.get("speaker", "")).strip())
@@ -187,6 +212,7 @@ def _llm_fill(paras: list[ParaSpans], cast: Cast, lang: str, llm, stats: dict,
             if canon:
                 sp.speaker, sp.confidence = canon, min(conf, 0.8)
                 stats["llm"] += 1
+                pending.pop(qid)  # a duplicate answer for the same quote is ignored
         for sp in pending.values():
             if not sp.speaker:
                 sp.speaker, sp.confidence = "unknown", 0.0

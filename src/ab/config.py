@@ -8,6 +8,8 @@ from typing import Literal
 import yaml
 from pydantic import BaseModel, Field
 
+from ab.styles import DEFAULT_STYLES as _DEFAULT_STYLES
+
 Language = Literal["en", "zh"]
 
 
@@ -83,6 +85,11 @@ class BookConfig(BaseModel):
     voices: dict[str, str | dict[str, str]] = Field(default_factory=dict)
     # Used by `ab voices-design` for the narrator (cast members use cast.yaml descriptions).
     narrator_description: str | None = None
+    # Delivery styles the attribute LLM may label a dialogue line with (see
+    # styles.py for the set). Render uses the voice `<role>@<style>` when the
+    # map has one (`ab voices-design` makes one clip per main character per
+    # style) and the plain role voice otherwise. [] turns labelling off.
+    styles: list[str] = Field(default_factory=lambda: list(_DEFAULT_STYLES))
 
     def voice_map(self, backend: str) -> dict[str, str]:
         nested = {k: v for k, v in self.voices.items() if isinstance(v, dict)}

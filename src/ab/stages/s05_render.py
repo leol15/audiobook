@@ -25,6 +25,7 @@ from ab.config import BookConfig, BookPaths
 from ab.lines import chapter_indexes, read_attribution, read_render, write_render, write_views
 from ab.log import note
 from ab.models import Line
+from ab.styles import voice_key
 from ab.text import chunk_text, sequence_cost
 from ab.tts import load_backend
 
@@ -99,8 +100,8 @@ def _run(paths: BookPaths, cfg: BookConfig, backend, force: bool, chapters: set[
             st = state.get(ln.id)
             if st:
                 ln.audio, ln.backend, ln.attempts = st.audio, st.backend, st.attempts
-            voice = resolve_voice(voices, ln.speaker)
-            voice_key = resolve_voice(fingerprints, ln.speaker)  # cache identity (clip hash aware)
+            voice = resolve_voice(voices, ln.speaker, ln.style)
+            voice_key = resolve_voice(fingerprints, ln.speaker, ln.style)  # cache identity (clip hash aware)
             if (paths.root / voice).is_file():
                 voice = str((paths.root / voice).resolve())  # reference clip, not a preset id
             out = _expected(paths, backend.name, voice_key, cfg.tts.params, ln)
@@ -237,8 +238,13 @@ def _link_by_line(paths: BookPaths) -> None:
                 (d / f"{st.id}.wav").symlink_to(Path("..") / Path(st.audio).name)
 
 
-def resolve_voice(voices: dict[str, str], speaker: str) -> str:
-    for key in (speaker, "_default", "narrator"):
-        if key in voices:
-            return voices[key]
+def resolve_voice(voices: dict[str, str], speaker: str, style: str | None = None) -> str:
+    """The speaker's voice for a style: `<speaker>@<style>` if the map has one,
+    else the plain speaker voice, else `_default` (again styled first), else narrator."""
+    for role in (speaker, "_default"):
+        for key in ((voice_key(role, style), role) if style else (role,)):
+            if key in voices:
+                return voices[key]
+    if "narrator" in voices:
+        return voices["narrator"]
     raise SystemExit(f"no voice configured for {speaker!r}; set voices.narrator in book.yaml")

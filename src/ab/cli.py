@@ -154,12 +154,15 @@ def voices_design(
     book: Path = typer.Argument(..., help="Book directory"),
     backend: str = typer.Option("qwen3tts", help="Backend with a voice-design model"),
     force: bool = typer.Option(False, help="Regenerate clips that already exist"),
+    styles: bool = typer.Option(True, help="Also one clip per main character per book.yaml style"),
+    batch: int = typer.Option(8, help="Clips designed per model call"),
 ):
-    """Create one reference clip per role from cast descriptions (Qwen3-TTS VoiceDesign)."""
+    """Create reference clips per role (and per style) from cast descriptions (Qwen3-TTS VoiceDesign)."""
     from ab import voices
 
     paths = _book(book)
-    out = voices.run(paths, paths.load_config(), force=force, backend_name=backend)
+    out = voices.run(paths, paths.load_config(), force=force, backend_name=backend, styles=styles,
+                     batch=batch)
     print(f"[green]voices-design[/] -> {out}")
 
 
@@ -216,14 +219,16 @@ def fix(
     line_id: str = typer.Argument(..., help="Line id, e.g. c000p0012s00 (see 04-script.md)"),
     speaker: str | None = typer.Option(None, help="Cast name, alias, or 'narrator'"),
     text: str | None = typer.Option(None, help="Replace the line's text"),
+    style: str | None = typer.Option(None, help="Delivery style from book.yaml styles, or 'neutral'"),
     unlock: bool = typer.Option(False, help="Let the attribute stage overwrite this line again"),
 ):
-    """Correct one line's speaker or text, lock it, and queue it for re-render."""
+    """Correct one line's speaker, text, or style, lock it, and queue it for re-render."""
     from ab.report import fix_line
 
     paths = _book(book)
-    ln = fix_line(paths, line_id, speaker=speaker, text=text, unlock=unlock)
-    note(paths, f"fix: {ln.id} -> {ln.speaker} {'(unlocked)' if unlock else '(locked)'}: {ln.text[:60]}")
+    ln = fix_line(paths, line_id, speaker=speaker, text=text, unlock=unlock, style=style)
+    note(paths, f"fix: {ln.id} -> {ln.speaker}{' {' + ln.style + '}' if ln.style else ''} "
+         f"{'(unlocked)' if unlock else '(locked)'}: {ln.text[:60]}")
     print("[dim]run `ab render` (or `ab run`) to re-render it[/]")
 
 

@@ -40,3 +40,13 @@ class Qwen3TTSBackend(SubprocessBackend):
         self.request({"kind": "design", "text": text, "lang": lang, "instruct": instruct,
                       "out": out, "params": dict(self.params)})
         return out
+
+    def design_batch(self, items: list[dict], *, lang: str) -> list[str]:
+        """Several clips ({text, instruct, out} each) in one VoiceDesign call:
+        like line batching, a call costs about as much as one clip. Falls
+        back to one call per clip if the worker predates batched design."""
+        self._start()
+        if self._worker_batches:
+            res = self.request({"kind": "design", "items": items, "lang": lang, "params": dict(self.params)})
+            return list(res["paths"])
+        return [self.design(it["text"], lang=lang, instruct=it["instruct"], out=it["out"]) for it in items]

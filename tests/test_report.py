@@ -70,6 +70,13 @@ def test_script_fix_and_report(book, monkeypatch):
     render.run(book, cfg)
     assert len(list(book.audio.glob("*.wav"))) == before + 1
 
+    # style: must be one of book.yaml styles; "neutral" clears it; shows in the script
+    ln = fix_line(book, "c000p0002s00", style="angry")
+    assert ln.style == "angry" and "{angry}" in book.script.read_text()
+    with pytest.raises(SystemExit):
+        fix_line(book, "c000p0002s00", style="bogus")
+    assert fix_line(book, "c000p0002s00", style="neutral").style is None
+
     rep = write_report(book, cfg)
     text = rep.read_text()
     assert "## Stages" in text and "Mrs. Bennet" in text

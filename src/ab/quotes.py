@@ -16,6 +16,7 @@ class Span:
     speaker: str | None = None   # resolved by rules; None means "ask the LLM"
     confidence: float = 0.0
     quote_id: int | None = None  # dialogue only; stable within a chapter
+    style: str | None = None     # delivery label from the LLM (see styles.py); None = neutral
 
 
 @dataclass

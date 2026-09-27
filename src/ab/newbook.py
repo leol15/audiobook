@@ -42,6 +42,9 @@ voices:
     _default: {qwen_narrator}
 
 # narrator_description: "..."  # used by `ab voices-design` for the narrator clip
+# Delivery styles the attribute LLM labels dialogue with; `ab voices-design`
+# makes a clip per main character per style (voices.<backend>.<role>@<style>).
+# styles: [angry, sad, soft, urgent]   # [] = off
 
 llm:
   model: null                 # Ollama model; null = OLLAMA_MODEL env or qwen3:14b

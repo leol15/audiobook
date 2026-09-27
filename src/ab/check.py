@@ -7,6 +7,7 @@ silently use the wrong voice); warnings are printed and the run continues.
 from __future__ import annotations
 
 from ab.config import BookConfig, BookPaths
+from ab.styles import split_key
 from ab.voicepool import CLIP_BACKENDS, POOLS, known_ids, pool
 
 _ROLES = {"narrator", "_default"}
@@ -26,7 +27,12 @@ def check(paths: BookPaths, cfg: BookConfig, backend: str | None = None) -> tupl
         errors.append(f"voices.{backend}: no narrator voice")
 
     # Voice keys that match no cast member (typos go to _default silently).
-    for role in voices:
+    # `<role>@<style>` keys are style clips; the style must be in book.yaml `styles`.
+    for key in voices:
+        role, style = split_key(key)
+        if style is not None and style not in cfg.styles:
+            warnings.append(f"voices.{backend}.{key}: style {style!r} is not in book.yaml styles "
+                            f"({', '.join(cfg.styles) or 'none'}); the clip is never used")
         if role in _ROLES:
             continue
         canon = cast.resolve(role)
@@ -35,9 +41,9 @@ def check(paths: BookPaths, cfg: BookConfig, backend: str | None = None) -> tupl
             if cast.characters:
                 close = _closest(role, list(cast.characters))
                 hint = f" (did you mean {close!r}?)" if close else ""
-            errors.append(f"voices.{backend}.{role}: not in cast.yaml{hint}")
+            errors.append(f"voices.{backend}.{key}: not in cast.yaml{hint}")
         elif canon != role:
-            warnings.append(f"voices.{backend}.{role}: matched cast member {canon!r} by alias; "
+            warnings.append(f"voices.{backend}.{key}: matched cast member {canon!r} by alias; "
                             f"use the canonical name")
 
     # Main cast members with no voice of their own.
@@ -64,7 +70,7 @@ def check(paths: BookPaths, cfg: BookConfig, backend: str | None = None) -> tupl
     # Duplicate voices within the main cast are legal but usually unintended.
     used: dict[str, list[str]] = {}
     for role, vid in voices.items():
-        if role not in _ROLES:
+        if split_key(role)[0] not in _ROLES:
             used.setdefault(vid, []).append(role)
     dups = {v: r for v, r in used.items() if len(r) > 1}
     for vid, roles in dups.items():

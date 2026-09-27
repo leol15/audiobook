@@ -10,6 +10,7 @@ from ab import cache
 from ab.config import BookConfig, BookPaths
 from ab.lines import chapter_indexes, read_chapter, read_lines, verify_failures
 from ab.models import ChapterList, Line
+from ab.styles import NEUTRAL
 
 # ---------------------------------------------------------------- script
 
@@ -18,6 +19,7 @@ def write_script(paths: BookPaths, lines: list[Line]) -> Path:
 
     Markers:  (?) model-attributed (confidence < 0.85)   (!) unknown speaker
               [x] verify failed (error above threshold)  [lock] hand-fixed
+              {angry} delivery style (attribute LLM label; see book.yaml styles)
     """
     titles = {}
     if paths.chapters_norm.exists():
@@ -25,8 +27,9 @@ def write_script(paths: BookPaths, lines: list[Line]) -> Path:
         titles = {c.index: c.title for c in book.chapters}
     verify_bad = verify_failures(paths)
     out = ["# Script", "",
-           "Markers: `(?)` model-attributed · `(!)` unknown speaker · `[x]` verify failed · `[lock]` hand-fixed",
-           "", "Fix a line with `ab fix <book> <id> --speaker NAME`.", ""]
+           ("Markers: `(?)` model-attributed · `(!)` unknown speaker · `[x]` verify failed · "
+            "`[lock]` hand-fixed · `{style}` delivery style"),
+           "", "Fix a line with `ab fix <book> <id> --speaker NAME [--style STYLE]`.", ""]
     chapter = None
     for ln in lines:
         if ln.chapter != chapter:
@@ -41,6 +44,8 @@ def write_script(paths: BookPaths, lines: list[Line]) -> Path:
             marks.append("[x]")
         if ln.locked:
             marks.append("[lock]")
+        if ln.style:
+            marks.append("{" + ln.style + "}")
         tag = "narrator" if ln.kind == "narration" else ln.speaker
         mark = (" " + " ".join(marks)) if marks else ""
         out.append(f"`{ln.id}` **{tag}**{mark}: {ln.text}")
@@ -244,8 +249,9 @@ def write_report(paths: BookPaths, cfg: BookConfig) -> Path:
 # ---------------------------------------------------------------- fix
 
 def fix_line(paths: BookPaths, line_id: str, speaker: str | None = None, text: str | None = None,
-             unlock: bool = False) -> Line:
+             unlock: bool = False, style: str | None = None) -> Line:
     """Edit one line by id, lock it, and drop its audio so render redoes it.
+    `style` "neutral" clears the delivery label.
 
     Only that chapter's attribute file changes (its stamp stays: attribution
     need not re-run), which makes the chapter's render stamp stale, so the
@@ -278,6 +284,11 @@ def fix_line(paths: BookPaths, line_id: str, speaker: str | None = None, text: s
         target.kind = "narration" if canon == "narrator" else "dialogue"
     if text is not None:
         target.text = text
+    if style is not None:
+        cfg = paths.load_config()
+        if style != NEUTRAL and style not in cfg.styles:
+            raise SystemExit(f"style {style!r} is not in book.yaml styles ({', '.join(cfg.styles) or 'none'})")
+        target.style = None if style == NEUTRAL else style
     target.confidence = 1.0
     target.locked = not unlock
     write_attribution(paths, chapter, lines)
